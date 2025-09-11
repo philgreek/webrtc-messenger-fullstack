@@ -11,7 +11,7 @@ import { CreateGroupScreen } from './components/CreateGroupScreen';
 // This tells TypeScript that the 'io' object is available globally (from the script in index.html)
 declare const io: any;
 
-const BACKEND_URL = 'http://localhost:3001'; // We will change this to the Render URL later
+const BACKEND_URL = 'https://webrtc-messenger-fullstack-server.onrender.com'; // We will change this to the Render URL later
 
 const DEFAULT_SETTINGS: NotificationSettings = {
     masterMute: false,
