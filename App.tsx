@@ -8,15 +8,21 @@ import { UserProfileScreen } from './components/UserProfileScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { CreateGroupScreen } from './components/CreateGroupScreen';
 
-// This tells TypeScript that the 'io' object is available globally (from the script in index.html)
 declare const io: any;
 
-const BACKEND_URL = 'https://webrtc-messenger-fullstack-server.onrender.com'; // We will change this to the Render URL later
+const BACKEND_URL = 'http://localhost:3001';
 
 const DEFAULT_SETTINGS: NotificationSettings = {
     masterMute: false,
-    soundUrl: 'https://cdn.pixabay.com/audio/2022/05/27/audio_132d7321b3.mp3', // Digital Ringtone (Working Link)
+    soundUrl: 'https://cdn.pixabay.com/audio/2022/05/27/audio_132d7321b3.mp3',
     mutedContacts: [],
+};
+
+const STUN_SERVERS = {
+    iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+    ],
 };
 
 const App: React.FC = () => {
@@ -27,89 +33,257 @@ const App: React.FC = () => {
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
     const [remoteStreams, setRemoteStreams] = useState<MediaStream[] | null>(null);
     const [callHistory, setCallHistory] = useState<CallLog[]>([]);
-    const [userProfile, setUserProfile] = useState<UserProfile>({ 
-        id: 0, 
-        name: 'You', 
-        avatarUrl: 'https://picsum.photos/seed/user0/200' 
+    const [userProfile, setUserProfile] = useState<UserProfile>({
+        id: 0,
+        name: 'You',
+        avatarUrl: `https://picsum.photos/seed/user${Math.random()}/200`
     });
     const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(DEFAULT_SETTINGS);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [isVideoEnabled, setIsVideoEnabled] = useState(false);
 
     const callAudioRef = useRef<HTMLAudioElement | null>(null);
-    const callTimerRef = useRef<number | null>(null);
-    const cameraVideoTrackRef = useRef<MediaStreamTrack | null>(null);
     const socketRef = useRef<any | null>(null);
+    const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+    const cameraVideoTrackRef = useRef<MediaStreamTrack | null>(null);
 
-    // Effect for loading data and connecting to the server
+    // FIX: Moved helper functions before they are used to fix "used before declaration" errors and corrected dependency arrays.
+    const logCall = useCallback((call: Call, status: CallStatus) => {
+        const newLog: CallLog = { id: `${Date.now()}`, target: call.target, type: call.type, direction: call.direction, timestamp: Date.now(), status };
+        setCallHistory(prev => {
+            const updated = [newLog, ...prev];
+            localStorage.setItem('callHistory', JSON.stringify(updated));
+            return updated;
+        });
+    }, []);
+
+    const playSound = useCallback((sound: 'calling' | 'incoming' | 'none', target?: Contact | Group) => {
+        if (callAudioRef.current) callAudioRef.current.pause();
+        if (sound === 'none') return;
+        
+        if (sound === 'incoming') {
+            if (notificationSettings.masterMute) return;
+            if (target && 'status' in target && notificationSettings.mutedContacts.includes(target.id)) return;
+        }
+
+        const url = sound === 'calling' 
+            ? 'https://cdn.pixabay.com/audio/2022/08/22/audio_107945d898.mp3'
+            : notificationSettings.soundUrl;
+        
+        callAudioRef.current = new Audio(url);
+        callAudioRef.current.loop = true;
+        callAudioRef.current.play().catch(e => console.error("Audio playback failed:", e));
+    }, [notificationSettings]);
+
+    const cleanupCall = useCallback(() => {
+        localStream?.getTracks().forEach(track => track.stop());
+        peerConnectionRef.current?.close();
+        peerConnectionRef.current = null;
+        setLocalStream(null);
+        setRemoteStreams(null);
+        setCurrentCall(null);
+        setAppState(AppState.CONTACTS);
+        playSound('none');
+        setIsScreenSharing(false);
+        setIsVideoEnabled(false);
+        cameraVideoTrackRef.current = null;
+    }, [localStream, playSound]);
+
+    const handleEndCall = useCallback((shouldEmit = true) => {
+        if (shouldEmit && currentCall && socketRef.current) {
+            socketRef.current.emit('end-call', { to: currentCall.target.id });
+        }
+        
+        if (currentCall) {
+            let status: CallStatus = CallStatus.OUTGOING;
+             if (appState === AppState.IN_CALL) status = CallStatus.ANSWERED;
+             else if (appState === AppState.INCOMING_CALL) status = CallStatus.MISSED;
+             logCall(currentCall, status);
+        }
+        cleanupCall();
+    }, [currentCall, appState, logCall, cleanupCall]);
+
+    const handleCallAnswered = useCallback(async ({ answer }: { answer: RTCSessionDescriptionInit }) => {
+        playSound('none');
+        if (peerConnectionRef.current) {
+            await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+            setAppState(AppState.IN_CALL);
+        }
+    }, [playSound]);
+
+    const handleNewICECandidate = useCallback(async ({ candidate }: { candidate: RTCIceCandidateInit }) => {
+        if (peerConnectionRef.current) {
+            try {
+                await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch (error) {
+                console.error("Error adding received ICE candidate", error);
+            }
+        }
+    }, []);
+
+    const createPeerConnection = useCallback((call: Call) => {
+        if (peerConnectionRef.current) {
+            peerConnectionRef.current.close();
+        }
+        const pc = new RTCPeerConnection(STUN_SERVERS);
+
+        pc.onicecandidate = (event) => {
+            if (event.candidate && socketRef.current) {
+                socketRef.current.emit('ice-candidate', {
+                    to: call.target.id,
+                    candidate: event.candidate,
+                });
+            }
+        };
+
+        pc.ontrack = (event) => {
+            // FIX: Convert readonly MediaStream[] to mutable array to fix type error.
+            setRemoteStreams([...event.streams]);
+        };
+
+        localStream?.getTracks().forEach(track => {
+            pc.addTrack(track, localStream);
+        });
+        
+        peerConnectionRef.current = pc;
+    }, [localStream]);
+
+    const setupMedia = useCallback(async (type: CallType, facingMode: 'user' | 'environment' = 'user') => {
+        const constraints = {
+            audio: true,
+            video: type === CallType.VIDEO ? { width: 1280, height: 720, facingMode } : false
+        };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        return stream;
+    }, []);
+
+    const handleIncomingCall = useCallback(async ({ from, offer, callType }: { from: Contact, offer: RTCSessionDescriptionInit, callType: CallType }) => {
+        const call: Call = { target: from, type: callType, direction: 'incoming' };
+        setCurrentCall(call);
+        
+        try {
+            const stream = await setupMedia(callType);
+            setLocalStream(stream);
+            createPeerConnection(call);
+            
+            await peerConnectionRef.current?.setRemoteDescription(new RTCSessionDescription(offer));
+            
+            setAppState(AppState.INCOMING_CALL);
+            playSound('incoming', from);
+            setIsVideoEnabled(callType === CallType.VIDEO);
+
+        } catch (error) {
+            console.error('Failed to handle incoming call:', error);
+            cleanupCall();
+        }
+    }, [createPeerConnection, playSound, cleanupCall, setupMedia]);
+
+    // --- Core Data Loading and Socket Connection ---
     useEffect(() => {
-        // --- 1. Load data from localStorage (History, Profile, Settings) ---
         try {
             const savedHistory = localStorage.getItem('callHistory');
             if (savedHistory) setCallHistory(JSON.parse(savedHistory));
-
             const savedProfile = localStorage.getItem('userProfile');
             if (savedProfile) setUserProfile(JSON.parse(savedProfile));
-            
             const savedSettings = localStorage.getItem('notificationSettings');
             if (savedSettings) setNotificationSettings(JSON.parse(savedSettings));
-        } catch (error) {
-            console.error("Failed to parse data from localStorage", error);
-        }
+        } catch (error) { console.error("Failed to parse localStorage data", error); }
 
-        // --- 2. Fetch initial data from our new backend ---
         fetch(`${BACKEND_URL}/api/initial-data`)
             .then(res => res.json())
             .then(data => {
                 setContacts(data.contacts);
                 setGroups(data.groups);
-            })
-            .catch(err => console.error("Failed to fetch initial data from server:", err));
+            }).catch(err => console.error("Failed to fetch initial data:", err));
 
-        // --- 3. Connect to the WebSocket server ---
         const socket = io(BACKEND_URL);
         socketRef.current = socket;
 
         socket.on('connect', () => {
             console.log('Connected to signaling server with ID:', socket.id);
+            // Register user with our "You" ID. In a real app, this would be a unique user ID from a database.
+            socket.emit('register', userProfile.id);
         });
 
-        // --- 4. Cleanup on component unmount ---
+        socket.on('incoming-call', handleIncomingCall);
+        socket.on('call-answered', handleCallAnswered);
+        socket.on('ice-candidate', handleNewICECandidate);
+        socket.on('call-ended', () => handleEndCall(false)); // Don't emit end-call again
+
         return () => {
             socket.disconnect();
         };
-    }, []);
-    
-    // --- We will keep these functions, but they will soon be powered by the backend ---
+    }, [userProfile.id, handleEndCall, handleIncomingCall, handleCallAnswered, handleNewICECandidate]); // Re-register if userProfile changes
+
+    // --- Call Handling Logic ---
+
+    const handleStartCall = useCallback(async (target: Contact | Group, type: CallType) => {
+        if (target.id === userProfile.id) {
+            alert("You cannot call yourself.");
+            return;
+        }
+        
+        const call: Call = { target, type, direction: 'outgoing' };
+        setCurrentCall(call);
+        setIsVideoEnabled(type === CallType.VIDEO);
+
+        try {
+            const stream = await setupMedia(type);
+            setLocalStream(stream);
+            createPeerConnection(call);
+            
+            const offer = await peerConnectionRef.current?.createOffer();
+            await peerConnectionRef.current?.setLocalDescription(offer);
+
+            socketRef.current?.emit('outgoing-call', {
+                from: userProfile,
+                to: target,
+                offer,
+                callType: type,
+            });
+
+            setAppState(AppState.OUTGOING_CALL);
+            playSound('calling', target);
+
+        } catch (error) {
+            console.error('Failed to start call:', error);
+            alert('Could not access camera/microphone. Please check permissions.');
+            cleanupCall();
+        }
+    }, [userProfile, createPeerConnection, playSound, cleanupCall, setupMedia]);
+
+    const handleAcceptCall = useCallback(async () => {
+        if (!currentCall || !peerConnectionRef.current) return;
+        
+        playSound('none');
+        try {
+            const answer = await peerConnectionRef.current.createAnswer();
+            await peerConnectionRef.current.setLocalDescription(answer);
+
+            socketRef.current?.emit('call-accepted', {
+                from: userProfile,
+                to: currentCall.target,
+                answer,
+            });
+
+            setAppState(AppState.IN_CALL);
+
+        } catch (error) {
+            console.error("Failed to accept call:", error);
+            handleEndCall();
+        }
+    }, [currentCall, userProfile, playSound, handleEndCall]);
+
+    // Placeholder functions for local UI interactions
     const handleAddNewContact = useCallback((name: string) => {
-        // In the future, this will send a request to the backend.
-        // For now, we'll just add it locally for a smooth UI experience.
-        const newContact: Contact = {
-            id: Date.now(),
-            name: name.trim(),
-            avatarUrl: `https://picsum.photos/seed/${name.trim().toLowerCase()}/200`,
-            status: ContactStatus.OFFLINE,
-        };
+        const newContact: Contact = { id: Date.now(), name, avatarUrl: `https://picsum.photos/seed/${name}/200`, status: ContactStatus.OFFLINE };
         setContacts(prev => [...prev, newContact]);
     }, []);
 
     const handleCreateGroup = useCallback((groupName: string, memberIds: number[]) => {
-        const newGroup: Group = {
-            id: Date.now(),
-            name: groupName,
-            avatarUrl: `https://picsum.photos/seed/${groupName.toLowerCase().replace(/\s+/g, '-')}/200`,
-            members: memberIds,
-        };
+        const newGroup: Group = { id: Date.now(), name: groupName, avatarUrl: `https://picsum.photos/seed/${groupName}/200`, members: memberIds };
         setGroups(prev => [...prev, newGroup]);
     }, []);
-
-    const missedCallContactIds = useMemo(() => {
-        return new Set(
-            callHistory
-                .filter(log => log.status === CallStatus.MISSED && 'status' in log.target)
-                .map(log => log.target.id)
-        );
-    }, [callHistory]);
 
     const handleUpdateProfile = useCallback((newProfile: UserProfile) => {
         setUserProfile(newProfile);
@@ -121,241 +295,18 @@ const App: React.FC = () => {
         localStorage.setItem('notificationSettings', JSON.stringify(newSettings));
     }, []);
 
-    const logCall = useCallback((call: Call, status: CallStatus) => {
-        const newLog: CallLog = {
-            id: `${Date.now()}-${call.target.id}`,
-            target: call.target,
-            type: call.type,
-            direction: call.direction,
-            timestamp: Date.now(),
-            status,
-        };
-        
-        setCallHistory(prevHistory => {
-            const updatedHistory = [newLog, ...prevHistory];
-            localStorage.setItem('callHistory', JSON.stringify(updatedHistory));
-            return updatedHistory;
-        });
-    }, []);
-
-    const playSound = useCallback((sound: 'calling' | 'incoming' | 'none', target?: Contact | Group) => {
-        if (callAudioRef.current) {
-            callAudioRef.current.pause();
-            callAudioRef.current.currentTime = 0;
-        }
-        if (sound === 'none') return;
-        
-        if (sound === 'incoming') {
-            if (notificationSettings.masterMute) return;
-             if (target && 'status' in target) { // It's a Contact
-                if (notificationSettings.mutedContacts.includes(target.id)) return;
-            }
-        }
-
-        const url = sound === 'calling' 
-            ? 'https://cdn.pixabay.com/audio/2022/08/22/audio_107945d898.mp3' // Ringing tone (outgoing)
-            : notificationSettings.soundUrl; // Incoming call tone
-        
-        callAudioRef.current = new Audio(url);
-        callAudioRef.current.loop = true;
-        callAudioRef.current.play().catch(e => console.error("Audio playback failed:", e));
-    }, [notificationSettings]);
-
-    const cleanupStreams = useCallback(() => {
-        localStream?.getTracks().forEach(track => track.stop());
-        remoteStreams?.forEach(stream => stream.getTracks().forEach(track => track.stop()));
-        setLocalStream(null);
-        setRemoteStreams(null);
-    }, [localStream, remoteStreams]);
-
-    const handleEndCall = useCallback(() => {
-        if (callTimerRef.current) {
-            clearTimeout(callTimerRef.current);
-            callTimerRef.current = null;
-        }
-
-        if (currentCall) {
-            let status: CallStatus;
-            if (appState === AppState.IN_CALL) {
-                status = CallStatus.ANSWERED;
-            } else if (appState === AppState.INCOMING_CALL && currentCall.direction === 'incoming') {
-                status = CallStatus.MISSED;
-            } else { 
-                status = CallStatus.OUTGOING;
-            }
-            logCall(currentCall, status);
-        }
-
-        playSound('none');
-        cleanupStreams();
-        setIsScreenSharing(false);
-        setIsVideoEnabled(false);
-        cameraVideoTrackRef.current = null;
-        setAppState(AppState.CONTACTS);
-        setCurrentCall(null);
-    }, [cleanupStreams, currentCall, appState, logCall, playSound]);
-
-    const setupStreams = useCallback(async (call: Call, facingMode: 'user' | 'environment' = 'user') => {
-        cleanupStreams();
-        try {
-            const constraints = {
-                audio: true,
-                video: call.type === CallType.VIDEO ? { width: 1280, height: 720, facingMode } : false
-            };
-            const stream = await navigator.mediaDevices.getUserMedia(constraints);
-            setLocalStream(stream);
-            
-            // This simulation will be replaced with real WebRTC streams
-            const newRemoteStreams: MediaStream[] = [];
-             if ('members' in call.target) {
-                for (let i = 0; i < call.target.members.length - 1; i++) {
-                    newRemoteStreams.push(stream.clone());
-                }
-            } else {
-                newRemoteStreams.push(stream.clone());
-            }
-            setRemoteStreams(newRemoteStreams);
-
-            return true;
-        } catch (error) {
-            console.error('Error accessing media devices.', error);
-            alert('Could not access camera/microphone. Please check permissions.');
-            handleEndCall();
-            return false;
-        }
-    }, [cleanupStreams, handleEndCall]);
-
-    // All the call handling logic below remains the same for now
-    const handleSwitchCamera = useCallback(async (newFacingMode: 'user' | 'environment') => {
-        if (!currentCall || !localStream || !isVideoEnabled) return;
-        
-        const audioTracks = localStream.getAudioTracks();
-        localStream.getVideoTracks().forEach(track => track.stop());
+    const missedCallContactIds = useMemo(() => new Set(callHistory.filter(log => log.status === CallStatus.MISSED).map(log => log.target.id)), [callHistory]);
     
-        try {
-            const newVideoStream = await navigator.mediaDevices.getUserMedia({
-                video: { width: 1280, height: 720, facingMode: newFacingMode }
-            });
-            const newVideoTrack = newVideoStream.getVideoTracks()[0];
-            const newStream = new MediaStream([...audioTracks, newVideoTrack]);
-            
-            setLocalStream(newStream);
-            if (remoteStreams) {
-                setRemoteStreams(remoteStreams.map(() => newStream.clone())); 
-            }
-        } catch (error) {
-            console.error('Error switching camera.', error);
-        }
-    }, [currentCall, localStream, isVideoEnabled, remoteStreams]);
+    // Media control functions (mute, switch camera etc.) will be added back in the next steps
+    const handleSwitchCamera = () => console.log("Switch Camera clicked");
+    const handleToggleScreenShare = () => console.log("Toggle Screen Share clicked");
+    const handleToggleVideo = () => console.log("Toggle Video clicked");
 
-    const handleToggleVideoEnabled = useCallback(async () => {
-        if (!localStream) return;
-        const nextVideoState = !isVideoEnabled;
-
-        const videoTrack = localStream.getVideoTracks()[0];
-
-        if (nextVideoState) {
-            if (videoTrack) {
-                videoTrack.enabled = true;
-            } else {
-                try {
-                    const videoStream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720, facingMode: 'user' } });
-                    const newVideoTrack = videoStream.getVideoTracks()[0];
-                    localStream.addTrack(newVideoTrack);
-                    const newStream = new MediaStream(localStream.getTracks());
-                    setLocalStream(newStream);
-                    if (remoteStreams) setRemoteStreams(remoteStreams.map(() => newStream.clone()));
-                } catch (error) {
-                    console.error("Failed to enable camera for upgrade", error);
-                    return;
-                }
-            }
-        } else {
-            if (videoTrack) videoTrack.enabled = false;
-        }
-        setIsVideoEnabled(nextVideoState);
-    }, [localStream, isVideoEnabled, remoteStreams]);
-
-    const handleToggleScreenShare = useCallback(async () => {
-        if (!isVideoEnabled || !localStream) return;
-    
-        const currentVideoTrack = localStream.getVideoTracks()[0];
-    
-        if (isScreenSharing) {
-            currentVideoTrack?.stop();
-            localStream.removeTrack(currentVideoTrack);
-            
-            if (cameraVideoTrackRef.current) {
-                localStream.addTrack(cameraVideoTrackRef.current);
-                cameraVideoTrackRef.current = null;
-            }
-            
-            const newStream = new MediaStream(localStream.getTracks());
-            setRemoteStreams(remoteStreams?.map(() => newStream.clone()) || []);
-            setIsScreenSharing(false);
-    
-        } else {
-            try {
-                const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-                const screenTrack = screenStream.getVideoTracks()[0];
-    
-                if (currentVideoTrack) {
-                    cameraVideoTrackRef.current = currentVideoTrack;
-                    localStream.removeTrack(currentVideoTrack);
-                }
-    
-                localStream.addTrack(screenTrack);
-                const newStream = new MediaStream(localStream.getTracks());
-                setRemoteStreams(remoteStreams?.map(() => newStream.clone()) || []);
-                setIsScreenSharing(true);
-    
-                screenTrack.onended = () => {
-                    localStream.removeTrack(screenTrack);
-                    if (cameraVideoTrackRef.current) {
-                        localStream.addTrack(cameraVideoTrackRef.current);
-                        cameraVideoTrackRef.current = null;
-                    }
-                    const finalStream = new MediaStream(localStream.getTracks());
-                    setRemoteStreams(remoteStreams?.map(() => finalStream.clone()) || []);
-                    setIsScreenSharing(false);
-                };
-            } catch (error) {
-                console.error("Screen share failed", error);
-            }
-        }
-    }, [isScreenSharing, localStream, isVideoEnabled, remoteStreams]);
-
-    const handleStartCall = useCallback((target: Contact | Group, type: CallType) => {
-        // This will be replaced by socket.emit('outgoing-call', ...)
-        const call: Call = { target, type, direction: 'outgoing' };
-        setAppState(AppState.OUTGOING_CALL);
-        setCurrentCall(call);
-        setIsVideoEnabled(type === CallType.VIDEO);
-        playSound('calling', target);
-        
-        const timerId = window.setTimeout(() => {
-            playSound('none');
-            setupStreams(call, 'user').then(success => {
-                if (success) setAppState(AppState.IN_CALL);
-            });
-            callTimerRef.current = null;
-        }, 4000);
-        callTimerRef.current = timerId;
-    }, [setupStreams, playSound]);
-
-    const handleAcceptCall = useCallback(() => {
-        if (!currentCall) return;
-        setIsVideoEnabled(currentCall.type === CallType.VIDEO);
-        playSound('none');
-        setupStreams(currentCall, 'user').then(success => {
-            if (success) setAppState(AppState.IN_CALL);
-        });
-    }, [currentCall, setupStreams, playSound]);
 
     const renderCurrentView = () => {
         switch(appState) {
             case AppState.CONTACTS:
-                return <ContactListScreen contacts={contacts} groups={groups} onStartCall={handleStartCall} onNavigate={setAppState} userProfile={userProfile} missedCallContactIds={missedCallContactIds} onAddNewContact={handleAddNewContact} />;
+                return <ContactListScreen contacts={contacts.filter(c => c.id !== userProfile.id)} groups={groups} onStartCall={handleStartCall} onNavigate={setAppState} userProfile={userProfile} missedCallContactIds={missedCallContactIds} onAddNewContact={handleAddNewContact} />;
             case AppState.CALL_HISTORY:
                 return <CallHistoryScreen history={callHistory} onNavigate={setAppState} onStartCall={handleStartCall} />;
             case AppState.USER_PROFILE:
@@ -369,15 +320,15 @@ const App: React.FC = () => {
                     <CallView
                         appState={appState}
                         call={currentCall}
-                        onEndCall={handleEndCall}
+                        onEndCall={() => handleEndCall(true)}
                         onAcceptCall={handleAcceptCall}
-                        onSwitchCamera={handleSwitchCamera}
+                        onSwitchCamera={() => handleSwitchCamera()}
                         localStream={localStream}
                         remoteStreams={remoteStreams}
                         isScreenSharing={isScreenSharing}
                         onToggleScreenShare={handleToggleScreenShare}
                         isVideoEnabled={isVideoEnabled}
-                        onToggleVideo={handleToggleVideoEnabled}
+                        onToggleVideo={handleToggleVideo}
                     />
                 );
         }
