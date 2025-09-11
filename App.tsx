@@ -33,11 +33,7 @@ const App: React.FC = () => {
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
     const [remoteStreams, setRemoteStreams] = useState<MediaStream[] | null>(null);
     const [callHistory, setCallHistory] = useState<CallLog[]>([]);
-    const [userProfile, setUserProfile] = useState<UserProfile>({
-        id: 0,
-        name: 'You',
-        avatarUrl: `https://picsum.photos/seed/user${Math.random()}/200`
-    });
+    const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
     const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(DEFAULT_SETTINGS);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [isVideoEnabled, setIsVideoEnabled] = useState(false);
@@ -47,7 +43,6 @@ const App: React.FC = () => {
     const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
     const cameraVideoTrackRef = useRef<MediaStreamTrack | null>(null);
 
-    // FIX: Moved helper functions before they are used to fix "used before declaration" errors and corrected dependency arrays.
     const logCall = useCallback((call: Call, status: CallStatus) => {
         const newLog: CallLog = { id: `${Date.now()}`, target: call.target, type: call.type, direction: call.direction, timestamp: Date.now(), status };
         setCallHistory(prev => {
@@ -102,6 +97,32 @@ const App: React.FC = () => {
         }
         cleanupCall();
     }, [currentCall, appState, logCall, cleanupCall]);
+    
+    const createPeerConnection = useCallback((call: Call) => {
+        if (peerConnectionRef.current) {
+            peerConnectionRef.current.close();
+        }
+        const pc = new RTCPeerConnection(STUN_SERVERS);
+
+        pc.onicecandidate = (event) => {
+            if (event.candidate && socketRef.current && call) {
+                socketRef.current.emit('ice-candidate', {
+                    to: call.target.id,
+                    candidate: event.candidate,
+                });
+            }
+        };
+
+        pc.ontrack = (event) => {
+            setRemoteStreams([...event.streams]);
+        };
+
+        localStream?.getTracks().forEach(track => {
+            if(localStream) pc.addTrack(track, localStream);
+        });
+        
+        peerConnectionRef.current = pc;
+    }, [localStream]);
 
     const handleCallAnswered = useCallback(async ({ answer }: { answer: RTCSessionDescriptionInit }) => {
         playSound('none');
@@ -120,34 +141,7 @@ const App: React.FC = () => {
             }
         }
     }, []);
-
-    const createPeerConnection = useCallback((call: Call) => {
-        if (peerConnectionRef.current) {
-            peerConnectionRef.current.close();
-        }
-        const pc = new RTCPeerConnection(STUN_SERVERS);
-
-        pc.onicecandidate = (event) => {
-            if (event.candidate && socketRef.current) {
-                socketRef.current.emit('ice-candidate', {
-                    to: call.target.id,
-                    candidate: event.candidate,
-                });
-            }
-        };
-
-        pc.ontrack = (event) => {
-            // FIX: Convert readonly MediaStream[] to mutable array to fix type error.
-            setRemoteStreams([...event.streams]);
-        };
-
-        localStream?.getTracks().forEach(track => {
-            pc.addTrack(track, localStream);
-        });
-        
-        peerConnectionRef.current = pc;
-    }, [localStream]);
-
+    
     const setupMedia = useCallback(async (type: CallType, facingMode: 'user' | 'environment' = 'user') => {
         const constraints = {
             audio: true,
@@ -183,8 +177,6 @@ const App: React.FC = () => {
         try {
             const savedHistory = localStorage.getItem('callHistory');
             if (savedHistory) setCallHistory(JSON.parse(savedHistory));
-            const savedProfile = localStorage.getItem('userProfile');
-            if (savedProfile) setUserProfile(JSON.parse(savedProfile));
             const savedSettings = localStorage.getItem('notificationSettings');
             if (savedSettings) setNotificationSettings(JSON.parse(savedSettings));
         } catch (error) { console.error("Failed to parse localStorage data", error); }
@@ -192,32 +184,57 @@ const App: React.FC = () => {
         fetch(`${BACKEND_URL}/api/initial-data`)
             .then(res => res.json())
             .then(data => {
-                setContacts(data.contacts);
+                const allContacts = data.contacts;
+                const localUser = {
+                    id: 0,
+                    name: 'You',
+                    avatarUrl: `https://picsum.photos/seed/user${Math.random()}/200`
+                };
+                
+                const urlParams = new URLSearchParams(window.location.search);
+                const userParam = urlParams.get('user');
+
+                if (userParam) {
+                    const foundContact = allContacts.find((c: Contact) => c.name.toLowerCase() === userParam.toLowerCase());
+                    if (foundContact) {
+                        setUserProfile(foundContact);
+                    } else {
+                        setUserProfile(localUser);
+                    }
+                } else {
+                    setUserProfile(localUser);
+                }
+                
+                setContacts(allContacts);
                 setGroups(data.groups);
             }).catch(err => console.error("Failed to fetch initial data:", err));
+
+    }, []);
+
+    useEffect(() => {
+        if (!userProfile) return;
 
         const socket = io(BACKEND_URL);
         socketRef.current = socket;
 
         socket.on('connect', () => {
             console.log('Connected to signaling server with ID:', socket.id);
-            // Register user with our "You" ID. In a real app, this would be a unique user ID from a database.
             socket.emit('register', userProfile.id);
+            console.log(`Registered with ID: ${userProfile.id}`);
         });
 
         socket.on('incoming-call', handleIncomingCall);
         socket.on('call-answered', handleCallAnswered);
         socket.on('ice-candidate', handleNewICECandidate);
-        socket.on('call-ended', () => handleEndCall(false)); // Don't emit end-call again
+        socket.on('call-ended', () => handleEndCall(false));
 
         return () => {
             socket.disconnect();
         };
-    }, [userProfile.id, handleEndCall, handleIncomingCall, handleCallAnswered, handleNewICECandidate]); // Re-register if userProfile changes
-
-    // --- Call Handling Logic ---
+    }, [userProfile, handleEndCall, handleIncomingCall, handleCallAnswered, handleNewICECandidate]);
 
     const handleStartCall = useCallback(async (target: Contact | Group, type: CallType) => {
+        if (!userProfile) return;
         if (target.id === userProfile.id) {
             alert("You cannot call yourself.");
             return;
@@ -253,7 +270,7 @@ const App: React.FC = () => {
     }, [userProfile, createPeerConnection, playSound, cleanupCall, setupMedia]);
 
     const handleAcceptCall = useCallback(async () => {
-        if (!currentCall || !peerConnectionRef.current) return;
+        if (!currentCall || !peerConnectionRef.current || !userProfile) return;
         
         playSound('none');
         try {
@@ -274,7 +291,6 @@ const App: React.FC = () => {
         }
     }, [currentCall, userProfile, playSound, handleEndCall]);
 
-    // Placeholder functions for local UI interactions
     const handleAddNewContact = useCallback((name: string) => {
         const newContact: Contact = { id: Date.now(), name, avatarUrl: `https://picsum.photos/seed/${name}/200`, status: ContactStatus.OFFLINE };
         setContacts(prev => [...prev, newContact]);
@@ -287,7 +303,7 @@ const App: React.FC = () => {
 
     const handleUpdateProfile = useCallback((newProfile: UserProfile) => {
         setUserProfile(newProfile);
-        localStorage.setItem('userProfile', JSON.stringify(newProfile));
+        // In a real app, we'd also save the main user profile to localStorage
     }, []);
 
     const handleUpdateSettings = useCallback((newSettings: NotificationSettings) => {
@@ -297,11 +313,13 @@ const App: React.FC = () => {
 
     const missedCallContactIds = useMemo(() => new Set(callHistory.filter(log => log.status === CallStatus.MISSED).map(log => log.target.id)), [callHistory]);
     
-    // Media control functions (mute, switch camera etc.) will be added back in the next steps
     const handleSwitchCamera = () => console.log("Switch Camera clicked");
     const handleToggleScreenShare = () => console.log("Toggle Screen Share clicked");
     const handleToggleVideo = () => console.log("Toggle Video clicked");
 
+    if (!userProfile) {
+        return <div className="h-screen w-screen flex items-center justify-center bg-gray-900 text-white">Loading...</div>;
+    }
 
     const renderCurrentView = () => {
         switch(appState) {
