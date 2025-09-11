@@ -1,0 +1,8 @@
+{
+  "name": "ConnectSphere Messenger",
+  "description": "A sleek, minimalist messenger application for high-quality audio and video calls. Connect with your contacts instantly with a clean, Material Design-inspired interface.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
