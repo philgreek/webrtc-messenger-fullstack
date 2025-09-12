@@ -30,6 +30,7 @@ export enum CallType {
 }
 
 export enum AppState {
+  AUTH = 'AUTH',
   CONTACTS = 'CONTACTS',
   CALL_HISTORY = 'CALL_HISTORY',
   USER_PROFILE = 'USER_PROFILE',
@@ -65,4 +66,11 @@ export interface NotificationSettings {
   masterMute: boolean;
   soundUrl: string;
   mutedContacts: number[]; // Array of contact IDs
+}
+
+export interface AuthData {
+    token: string;
+    user: UserProfile;
+    contacts: Contact[];
+    groups: Group[];
 }
