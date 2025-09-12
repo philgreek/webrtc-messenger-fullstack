@@ -336,9 +336,52 @@ const App: React.FC = () => {
     }, [localStream, isVideoEnabled]);
     
     // --- Other Handlers ---
-    const handleAddNewContact = (name: string) => alert(`Feature to add contact '${name}' is coming soon!`);
+    const handleAddNewContact = async (name: string) => {
+        if (!token) return;
+        try {
+            const response = await fetch(`${BACKEND_URL}/api/contacts/add`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ name })
+            });
+            const newContact = await response.json();
+            if (!response.ok) {
+                throw new Error(newContact.message || 'Failed to add contact');
+            }
+            setContacts(prev => [...prev, newContact]);
+        } catch (error: any) {
+            console.error("Failed to add contact:", error);
+            alert(`Error: ${error.message}`);
+        }
+    };
+    
     const handleCreateGroup = (groupName: string, memberIds: number[]) => alert(`Feature to create group '${groupName}' is coming soon!`);
-    const handleUpdateProfile = (newProfile: UserProfile) => { setUserProfile(newProfile); alert('Profile updated locally! Backend update is coming soon.'); };
+    
+    const handleUpdateProfile = async (newProfile: UserProfile) => {
+        if (!token) return;
+        try {
+            const response = await fetch(`${BACKEND_URL}/api/profile/update`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ name: newProfile.name, avatarUrl: newProfile.avatarUrl })
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.message || 'Failed to update profile');
+            }
+            setUserProfile(data.user); // Update with the confirmed data from server
+        } catch (error: any) {
+            console.error("Failed to update profile:", error);
+            alert(`Error: ${error.message}`);
+        }
+    };
+
     const handleUpdateSettings = useCallback((newSettings: NotificationSettings) => { setNotificationSettings(newSettings); localStorage.setItem('notificationSettings', JSON.stringify(newSettings)); }, []);
     const missedCallContactIds = useMemo(() => new Set(callHistory.filter(log => log.status === CallStatus.MISSED).map(log => log.target.id)), [callHistory]);
     
