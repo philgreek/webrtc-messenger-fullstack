@@ -131,17 +131,22 @@ io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
 
   socket.on('register', (userId) => {
-    userSockets[userId] = socket.id;
-    socket.userId = userId;
-    users[userId].status = 'ONLINE';
-    // Notify contacts that this user is online
-    users[userId].contacts.forEach(contact => {
-        const contactSocketId = userSockets[contact.id];
-        if (contactSocketId) {
-            io.to(contactSocketId).emit('status-update', { userId: userId, status: 'ONLINE' });
-        }
-    });
-    console.log(`User ${userId} (${users[userId].name}) registered with socket ID ${socket.id}`);
+    // Add a defensive check here
+    if (users[userId]) {
+        userSockets[userId] = socket.id;
+        socket.userId = userId;
+        users[userId].status = 'ONLINE';
+        // Notify contacts that this user is online
+        users[userId].contacts.forEach(contact => {
+            const contactSocketId = userSockets[contact.id];
+            if (contactSocketId) {
+                io.to(contactSocketId).emit('status-update', { userId: userId, status: 'ONLINE' });
+            }
+        });
+        console.log(`User ${userId} (${users[userId].name}) registered with socket ID ${socket.id}`);
+    } else {
+        console.log(`Attempted to register non-existent user ID: ${userId}`);
+    }
   });
 
   socket.on('outgoing-call', (data) => {
@@ -180,7 +185,7 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
-    if (socket.userId && users[socket.userId]) {
+    if (socket.userId !== undefined && users[socket.userId]) {
       users[socket.userId].status = 'OFFLINE';
       // Notify contacts that this user is offline
       users[socket.userId].contacts.forEach(contact => {
