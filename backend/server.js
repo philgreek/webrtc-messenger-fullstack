@@ -7,7 +7,7 @@ const jwt = require('jsonwebtoken');
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '5mb' })); // Increase limit for base64 avatars
 
 const server = http.createServer(app);
 
@@ -122,6 +122,47 @@ app.get('/api/data', authenticateToken, (req, res) => {
       contacts: contacts,
       groups: user.groups
     });
+});
+
+// Update user profile
+app.post('/api/profile/update', authenticateToken, (req, res) => {
+    const { name, avatarUrl } = req.body;
+    const user = users[req.user.id];
+    if (!user) {
+        return res.status(404).json({ message: "User not found" });
+    }
+    if (name) user.name = name;
+    if (avatarUrl) user.avatarUrl = avatarUrl;
+    res.json({ message: 'Profile updated successfully', user: { id: user.id, name: user.name, avatarUrl: user.avatarUrl } });
+});
+
+// Add a new contact by name
+app.post('/api/contacts/add', authenticateToken, (req, res) => {
+    const { name } = req.body;
+    const currentUser = users[req.user.id];
+    if (!name) {
+        return res.status(400).json({ message: "Contact name is required" });
+    }
+
+    const contactToAdd = Object.values(users).find(u => u.name.toLowerCase() === name.toLowerCase());
+
+    if (!contactToAdd) {
+        return res.status(404).json({ message: `User "${name}" not found` });
+    }
+    if (contactToAdd.id === currentUser.id) {
+        return res.status(400).json({ message: "You cannot add yourself as a contact" });
+    }
+    if (currentUser.contacts.some(c => c.id === contactToAdd.id)) {
+        return res.status(400).json({ message: "This user is already in your contacts" });
+    }
+
+    const newContactForCurrentUser = { id: contactToAdd.id, name: contactToAdd.name, avatarUrl: contactToAdd.avatarUrl, status: userSockets[contactToAdd.id] ? 'ONLINE' : 'OFFLINE' };
+    currentUser.contacts.push(newContactForCurrentUser);
+
+    const newContactForOtherUser = { id: currentUser.id, name: currentUser.name, avatarUrl: currentUser.avatarUrl, status: 'ONLINE' }; // Current user is online
+    contactToAdd.contacts.push(newContactForOtherUser);
+
+    res.status(201).json(newContactForCurrentUser);
 });
 
 
