@@ -12,7 +12,7 @@ import { AuthScreen } from './components/AuthScreen';
 
 declare const io: any;
 
-const BACKEND_URL = 'http://localhost:3001';
+const BACKEND_URL = 'https://webrtc-messenger-fullstack-server.onrender.com';
 
 const DEFAULT_SETTINGS: NotificationSettings = {
     masterMute: false,
