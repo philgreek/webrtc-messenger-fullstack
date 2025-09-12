@@ -1,3 +1,4 @@
+
 import React, { useState, useRef } from 'react';
 import type { UserProfile } from '../types';
 import { AppState } from '../types';
@@ -9,9 +10,10 @@ interface UserProfileScreenProps {
   userProfile: UserProfile;
   onUpdateProfile: (profile: UserProfile) => void;
   onNavigate: (state: AppState) => void;
+  onLogout: () => void;
 }
 
-export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({ userProfile, onUpdateProfile, onNavigate }) => {
+export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({ userProfile, onUpdateProfile, onNavigate, onLogout }) => {
     const [name, setName] = useState(userProfile.name);
     const [avatarUrl, setAvatarUrl] = useState(userProfile.avatarUrl);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -85,6 +87,13 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({ userProfil
                     className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-green-500"
                 >
                     Save Changes
+                </button>
+                
+                <button
+                    onClick={onLogout}
+                    className="w-full mt-4 bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-red-500"
+                >
+                    Logout
                 </button>
             </main>
         </div>
