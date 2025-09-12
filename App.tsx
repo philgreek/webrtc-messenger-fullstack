@@ -359,7 +359,7 @@ const App: React.FC = () => {
             case AppState.CALL_HISTORY:
                 return <CallHistoryScreen history={callHistory} onNavigate={setAppState} onStartCall={handleStartCall} />;
             case AppState.USER_PROFILE:
-                return <UserProfileScreen userProfile={userProfile} onUpdateProfile={handleUpdateProfile} onNavigate={setAppState} />;
+                return <UserProfileScreen userProfile={userProfile} onUpdateProfile={handleUpdateProfile} onNavigate={setAppState} onLogout={handleLogout} />;
             case AppState.SETTINGS:
                 return <SettingsScreen contacts={contacts} currentSettings={notificationSettings} onUpdateSettings={handleUpdateSettings} onNavigate={setAppState} />;
             case AppState.CREATE_GROUP:
@@ -385,7 +385,6 @@ const App: React.FC = () => {
     
     return (
         <div className="h-screen w-screen bg-gray-900 text-white font-sans">
-             {appState === AppState.CONTACTS && <button onClick={handleLogout} className="absolute top-4 right-28 bg-red-600 text-white px-2 py-1 text-xs rounded z-50">Logout</button>}
             {renderCurrentView()}
         </div>
     );
