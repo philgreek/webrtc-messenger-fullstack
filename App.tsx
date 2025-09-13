@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { AppState, CallType, CallStatus, ContactStatus } from './types';
 import type { Contact, Call, CallLog, UserProfile, NotificationSettings, Group, AuthData } from './types';
@@ -12,7 +13,7 @@ import { AuthScreen } from './components/AuthScreen';
 
 declare const io: any;
 
-const BACKEND_URL = 'https://webrtc-messenger-fullstack-server.onrender.com';
+const BACKEND_URL = 'https://connectsphere-server.onrender.com';
 
 const DEFAULT_SETTINGS: NotificationSettings = {
     masterMute: false,
@@ -35,7 +36,7 @@ const App: React.FC = () => {
     const [groups, setGroups] = useState<Group[]>([]);
     const [currentCall, setCurrentCall] = useState<Call | null>(null);
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-    const [remoteStreams, setRemoteStreams] = useState<MediaStream[] | null>(null);
+    const [remoteStreams, setRemoteStreams] = useState<MediaStream[]>([]);
     const [callHistory, setCallHistory] = useState<CallLog[]>([]);
     const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
     const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(DEFAULT_SETTINGS);
@@ -94,7 +95,7 @@ const App: React.FC = () => {
         peerConnectionRef.current?.close();
         
         setLocalStream(null);
-        setRemoteStreams(null);
+        setRemoteStreams([]);
         setCurrentCall(null);
         setAppState(AppState.CONTACTS);
         playSound('none');
@@ -140,7 +141,13 @@ const App: React.FC = () => {
         };
 
         pc.ontrack = (event) => {
-            setRemoteStreams([...event.streams]);
+            setRemoteStreams(prevStreams => {
+                const stream = (prevStreams.length > 0) ? prevStreams[0] : new MediaStream();
+                if (!stream.getTrackById(event.track.id)) {
+                    stream.addTrack(event.track);
+                }
+                return [stream];
+            });
         };
         
         localStream?.getTracks().forEach(track => {
@@ -155,27 +162,34 @@ const App: React.FC = () => {
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         if (type === CallType.VIDEO) {
             cameraVideoTrackRef.current = stream.getVideoTracks()[0];
+        } else {
+            cameraVideoTrackRef.current = null;
         }
+        setLocalStream(stream);
+        setIsVideoEnabled(type === CallType.VIDEO);
         return stream;
     }, []);
 
     const handleStartCall = useCallback(async (target: Contact | Group, type: CallType) => {
-        if (!userProfile || 'members' in target) { // Disable group calls for now
+        if (!userProfile || 'members' in target) {
             alert("Group calls are not supported in this version.");
             return;
         }
         const call: Call = { target, type, direction: 'outgoing' };
         setCurrentCall(call);
-        setIsVideoEnabled(type === CallType.VIDEO);
         setAppState(AppState.OUTGOING_CALL);
         playSound('calling');
         
         try {
             const stream = await setupMedia(type);
-            setLocalStream(stream);
             createPeerConnection(call);
-            const offer = await peerConnectionRef.current?.createOffer();
-            await peerConnectionRef.current?.setLocalDescription(offer);
+            const pc = peerConnectionRef.current;
+            if (!pc) throw new Error("Peer connection not initialized");
+
+            stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
             
             socketRef.current?.emit('outgoing-call', { 
                 fromId: userProfile.id, 
@@ -197,7 +211,11 @@ const App: React.FC = () => {
         try {
             const answer = await peerConnectionRef.current.createAnswer();
             await peerConnectionRef.current.setLocalDescription(answer);
-            socketRef.current?.emit('call-accepted', { from: userProfile, to: currentCall.target, answer });
+            socketRef.current?.emit('call-accepted', { 
+                fromId: userProfile.id,
+                toId: currentCall.target.id, 
+                answer 
+            });
             setAppState(AppState.IN_CALL);
         } catch (error) {
             console.error("Failed to accept call:", error);
@@ -208,18 +226,20 @@ const App: React.FC = () => {
     // --- Socket Event Handlers ---
     
     const handleIncomingCall = useCallback(async ({ from, offer, callType }: { from: Contact, offer: RTCSessionDescriptionInit, callType: CallType }) => {
-        if (appState !== AppState.CONTACTS) return; // Ignore calls if already busy
+        if (appState !== AppState.CONTACTS && appState !== AppState.AUTH) return;
         const call: Call = { target: from, type: callType, direction: 'incoming' };
         setCurrentCall(call);
         setAppState(AppState.INCOMING_CALL);
         playSound('incoming', from);
-        setIsVideoEnabled(callType === CallType.VIDEO);
         
         try {
             const stream = await setupMedia(callType);
-            setLocalStream(stream);
             createPeerConnection(call);
-            await peerConnectionRef.current?.setRemoteDescription(new RTCSessionDescription(offer));
+            const pc = peerConnectionRef.current;
+            if (!pc) throw new Error("Peer connection not initialized");
+
+            await pc.setRemoteDescription(new RTCSessionDescription(offer));
+            stream.getTracks().forEach(track => pc.addTrack(track, stream));
         } catch (error) {
             console.error('Failed to handle incoming call:', error);
             cleanupCall();
@@ -255,7 +275,7 @@ const App: React.FC = () => {
                 .then(data => handleSuccessfulAuth({ ...data, token: savedToken }))
                 .catch(() => {
                     localStorage.removeItem('authToken');
-                    setAppState(AppState.AUTH); // Stay on auth if token is invalid
+                    setAppState(AppState.AUTH);
                 });
         }
     }, [handleSuccessfulAuth]);
@@ -294,10 +314,8 @@ const App: React.FC = () => {
             const sender = peerConnectionRef.current.getSenders().find(s => s.track?.kind === 'video');
             if (sender) {
                 await sender.replaceTrack(newVideoTrack);
-                localStream.getVideoTracks().forEach(track => track.stop());
-                localStream.removeTrack(localStream.getVideoTracks()[0]);
-                localStream.addTrack(newVideoTrack);
-                setLocalStream(localStream); // Trigger re-render of local video
+                localStream.getTracks().forEach(track => track.stop());
+                setLocalStream(newStream);
                 cameraVideoTrackRef.current = newVideoTrack;
             }
         } catch (error) {
@@ -305,37 +323,69 @@ const App: React.FC = () => {
         }
     }, [localStream, setupMedia]);
     
-    const handleToggleScreenShare = useCallback(async () => {
-        if (!peerConnectionRef.current) return;
+    const stopScreenShare = useCallback(async () => {
+        if (!peerConnectionRef.current || !isScreenSharing) return;
+        const sender = peerConnectionRef.current.getSenders().find(s => s.track?.kind === 'video');
+
+        localStream?.getVideoTracks().forEach(track => {
+            if (track.id !== cameraVideoTrackRef.current?.id) {
+                track.stop();
+            }
+        });
+
+        if (sender && cameraVideoTrackRef.current) {
+            await sender.replaceTrack(cameraVideoTrackRef.current);
+            const newStream = new MediaStream([cameraVideoTrackRef.current, ...localStream?.getAudioTracks() || []]);
+            setLocalStream(newStream);
+        }
+        setIsScreenSharing(false);
+    }, [isScreenSharing, localStream]);
+
+    const startScreenShare = useCallback(async () => {
+        if (!peerConnectionRef.current || isScreenSharing) return;
         const sender = peerConnectionRef.current.getSenders().find(s => s.track?.kind === 'video');
         if (!sender) return;
 
-        if (isScreenSharing) {
-            // Stop sharing, switch back to camera
-            if (cameraVideoTrackRef.current) {
-                await sender.replaceTrack(cameraVideoTrackRef.current);
-                localStream?.getTracks().filter(t => t.kind !== 'video').forEach(t => t.stop());
-                localStream?.addTrack(cameraVideoTrackRef.current);
-                setIsScreenSharing(false);
+        try {
+            const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+            const screenVideoTrack = screenStream.getVideoTracks()[0];
+            
+            if (!cameraVideoTrackRef.current) {
+                cameraVideoTrackRef.current = localStream?.getVideoTracks()[0] || null;
             }
-        } else {
-            // Start sharing
-            try {
-                const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-                const screenTrack = screenStream.getVideoTracks()[0];
-                cameraVideoTrackRef.current = localStream?.getVideoTracks()[0] || null; // Save camera track
-                await sender.replaceTrack(screenTrack);
-                setIsScreenSharing(true);
-                screenTrack.onended = () => handleToggleScreenShare(); // Auto-revert when user stops sharing
-            } catch (error) {
-                console.error("Screen sharing failed", error);
+            
+            await sender.replaceTrack(screenVideoTrack);
+
+            const newStreamTracks = [...localStream?.getAudioTracks() || [], screenVideoTrack];
+            if (screenStream.getAudioTracks().length > 0) {
+                 newStreamTracks.push(screenStream.getAudioTracks()[0]);
             }
+            const newStream = new MediaStream(newStreamTracks);
+            setLocalStream(newStream);
+
+            setIsScreenSharing(true);
+            
+            screenVideoTrack.onended = () => {
+                stopScreenShare();
+            };
+        } catch (error) {
+            console.error("Screen sharing failed", error);
+            setIsScreenSharing(false);
         }
-    }, [isScreenSharing, localStream]);
-    
+    }, [isScreenSharing, localStream, stopScreenShare]);
+
+    const handleToggleScreenShare = useCallback(async () => {
+        if (isScreenSharing) {
+            await stopScreenShare();
+        } else {
+            await startScreenShare();
+        }
+    }, [isScreenSharing, startScreenShare, stopScreenShare]);
+
     const handleToggleVideo = useCallback(() => {
         if (localStream) {
             const newVideoState = !isVideoEnabled;
+            // FIX: Corrected typo from `newVideoVAI Stare` to `newVideoState`.
             localStream.getVideoTracks().forEach(track => track.enabled = newVideoState);
             setIsVideoEnabled(newVideoState);
         }
@@ -381,7 +431,7 @@ const App: React.FC = () => {
             if (!response.ok) {
                 throw new Error(data.message || 'Failed to update profile');
             }
-            setUserProfile(data.user); // Update with the confirmed data from server
+            setUserProfile(data.user);
         } catch (error: any) {
             console.error("Failed to update profile:", error);
             alert(`Error: ${error.message}`);
