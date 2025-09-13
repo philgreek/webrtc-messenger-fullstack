@@ -47,6 +47,8 @@ const App: React.FC = () => {
     const socketRef = useRef<any | null>(null);
     const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
     const cameraVideoTrackRef = useRef<MediaStreamTrack | null>(null);
+    // Use a ref for remote streams to avoid stale closures in ontrack
+    const remoteStreamsRef = useRef<MediaStream[]>([]);
 
     const handleSuccessfulAuth = useCallback((data: AuthData) => {
         setToken(data.token);
@@ -94,6 +96,7 @@ const App: React.FC = () => {
         
         setLocalStream(null);
         setRemoteStreams([]);
+        remoteStreamsRef.current = [];
         setCurrentCall(null);
         setAppState(AppState.CONTACTS);
         playSound('none');
@@ -128,33 +131,51 @@ const App: React.FC = () => {
     }, [currentCall, appState, peerSocketId, logCall, cleanupCall]);
     
     const createPeerConnection = useCallback(() => {
-        if (peerConnectionRef.current) peerConnectionRef.current.close();
+        if (peerConnectionRef.current) {
+            peerConnectionRef.current.close();
+        }
         const pc = new RTCPeerConnection(STUN_SERVERS);
-
+    
         pc.onicecandidate = (event) => {
             if (event.candidate && socketRef.current && peerSocketId) {
                 socketRef.current.emit('ice-candidate', { toSocketId: peerSocketId, candidate: event.candidate });
             }
         };
-
-        const remoteStreamMap = new Map<string, MediaStream>();
+    
         pc.ontrack = (event) => {
-            const [remoteStream] = event.streams;
-            if (remoteStream) {
-                 setRemoteStreams([remoteStream]);
-            }
+            console.log("Track received:", event.track.kind);
+            const newStream = new MediaStream();
+            event.streams[0].getTracks().forEach(track => {
+                newStream.addTrack(track);
+            });
+
+            // This logic is crucial to prevent black screens.
+            // We use a functional update to ensure we have the latest state.
+            setRemoteStreams(prevStreams => {
+                // Check if a stream with the same ID already exists to avoid duplicates
+                if (prevStreams.some(s => s.id === newStream.id)) {
+                    return prevStreams;
+                }
+                return [...prevStreams, newStream];
+            });
         };
         
         localStream?.getTracks().forEach(track => {
-            if (localStream) pc.addTrack(track, localStream);
+            if (localStream) {
+                pc.addTrack(track, localStream);
+            }
         });
-
+    
         peerConnectionRef.current = pc;
         return pc;
     }, [localStream, peerSocketId]);
     
     const setupMedia = useCallback(async (type: CallType, facingMode: 'user' | 'environment' = 'user') => {
-        const constraints = { audio: true, video: type === CallType.VIDEO ? { width: 1280, height: 720, facingMode } : false };
+        localStream?.getTracks().forEach(track => track.stop());
+        const constraints = { 
+            audio: true, 
+            video: type === CallType.VIDEO ? { width: 1280, height: 720, facingMode } : false 
+        };
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         if (type === CallType.VIDEO) {
             cameraVideoTrackRef.current = stream.getVideoTracks()[0];
@@ -164,7 +185,7 @@ const App: React.FC = () => {
         setLocalStream(stream);
         setIsVideoEnabled(type === CallType.VIDEO);
         return stream;
-    }, []);
+    }, [localStream]);
 
     const handleStartCall = useCallback(async (target: Contact | Group, type: CallType) => {
         if (!userProfile || 'members' in target) {
@@ -246,7 +267,7 @@ const App: React.FC = () => {
     }, [playSound]);
 
     const handleNewICECandidate = useCallback(async ({ candidate }: { candidate: RTCIceCandidateInit }) => {
-        if (peerConnectionRef.current) {
+        if (peerConnectionRef.current && candidate) {
             try { await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate)); }
             catch (error) { console.error("Error adding received ICE candidate", error); }
         }
@@ -265,7 +286,6 @@ const App: React.FC = () => {
             }));
         });
     }, []);
-
 
     useEffect(() => {
         const attemptAutoLogin = async () => {
@@ -306,7 +326,7 @@ const App: React.FC = () => {
             socket.on('ice-candidate', handleNewICECandidate);
             socket.on('call-ended', () => handleEndCall(false));
             socket.on('status-update', handleStatusUpdate);
-            socket.on('initial-statuses', handleInitialStatuses); // Listen for the new event
+            socket.on('initial-statuses', handleInitialStatuses);
 
             return () => { socket.disconnect(); };
         }
@@ -320,46 +340,65 @@ const App: React.FC = () => {
             const sender = peerConnectionRef.current.getSenders().find(s => s.track?.kind === 'video');
             if (sender) {
                 await sender.replaceTrack(newVideoTrack);
-                localStream.getTracks().forEach(track => track.stop()); // Stop old stream tracks
+                // Don't stop the old stream tracks, just replace them.
                 setLocalStream(newStream);
                 cameraVideoTrackRef.current = newVideoTrack;
             }
         } catch (error) { console.error("Failed to switch camera", error); }
     }, [localStream, setupMedia]);
-    
+
     const stopScreenShare = useCallback(async () => {
         if (!peerConnectionRef.current || !cameraVideoTrackRef.current) return;
         const sender = peerConnectionRef.current.getSenders().find(s => s.track?.kind === 'video');
         if (sender) {
-            await sender.replaceTrack(cameraVideoTrackRef.current);
+             try {
+                // Re-acquire camera stream before replacing track
+                const cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                const newCameraTrack = cameraStream.getVideoTracks()[0];
+                cameraVideoTrackRef.current = newCameraTrack;
+                await sender.replaceTrack(newCameraTrack);
+                localStream?.getTracks().forEach(track => track.stop()); // Stop the screen share tracks
+                setLocalStream(cameraStream);
+                setIsScreenSharing(false);
+            } catch (error) {
+                console.error("Failed to re-acquire camera for stopping screen share:", error);
+            }
         }
-        localStream?.getTracks().forEach(track => track.stop());
-        const newStream = new MediaStream([cameraVideoTrackRef.current, ...((await navigator.mediaDevices.getUserMedia({audio: true})).getAudioTracks())]);
-        setLocalStream(newStream);
-        setIsScreenSharing(false);
     }, [localStream]);
     
     const startScreenShare = useCallback(async () => {
         if (!peerConnectionRef.current) return;
         try {
-            const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+            const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
             const screenTrack = screenStream.getVideoTracks()[0];
-            if (!cameraVideoTrackRef.current) cameraVideoTrackRef.current = localStream?.getVideoTracks()[0] || null;
+            if (!cameraVideoTrackRef.current) { // Save the original camera track if it doesn't exist
+                cameraVideoTrackRef.current = localStream?.getVideoTracks()[0] || null;
+            }
             const sender = peerConnectionRef.current.getSenders().find(s => s.track?.kind === 'video');
-            if (sender) await sender.replaceTrack(screenTrack);
-            const audioTracks = localStream?.getAudioTracks() || [];
-            localStream?.getVideoTracks().forEach(track => track.stop());
-            const newStream = new MediaStream([screenTrack, ...audioTracks]);
-            setLocalStream(newStream);
-            setIsScreenSharing(true);
-            screenTrack.onended = () => { if (peerConnectionRef.current?.connectionState === 'connected') stopScreenShare(); };
-        } catch (error) { console.error("Screen sharing failed:", error); setIsScreenSharing(false); }
+            if (sender) {
+                await sender.replaceTrack(screenTrack);
+                localStream?.getTracks().forEach(track => track.stop()); // Stop old camera tracks
+                setLocalStream(screenStream);
+                setIsScreenSharing(true);
+                screenTrack.onended = () => { if (peerConnectionRef.current) stopScreenShare(); };
+            }
+        } catch (error) { 
+            console.error("Screen sharing failed:", error);
+            setIsScreenSharing(false); 
+        }
     }, [localStream, stopScreenShare]);
 
-    const handleToggleScreenShare = useCallback(() => { isScreenSharing ? stopScreenShare() : startScreenShare(); }, [isScreenSharing, startScreenShare, stopScreenShare]);
+
+    const handleToggleScreenShare = useCallback(() => { 
+        if (isScreenSharing) {
+            stopScreenShare();
+        } else {
+            startScreenShare();
+        }
+    }, [isScreenSharing, startScreenShare, stopScreenShare]);
+
     const handleToggleVideo = useCallback(() => {
         if (localStream) {
-            // FIX: Corrected a typo in the variable name from `newVideoVAI Stare` to `newVideoState`.
             const newVideoState = !isVideoEnabled;
             localStream.getVideoTracks().forEach(track => track.enabled = newVideoState);
             setIsVideoEnabled(newVideoState);
