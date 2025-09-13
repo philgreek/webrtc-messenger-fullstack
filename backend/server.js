@@ -6,14 +6,34 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 const app = express();
-app.use(cors());
+
+// --- CRITICAL FIX: CORS Configuration ---
+// This explicitly allows requests from your Vercel frontend and localhost for development.
+// This solves the "Failed to fetch" error.
+const allowedOrigins = [
+    'https://connectsphere-messenger.vercel.app', 
+    'http://localhost:5173', // Add your local dev port if it's different
+    'http://localhost:3000'
+];
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  }
+};
+
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '5mb' })); // Increase limit for base64 avatars
 
 const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: allowedOrigins,
     methods: ["GET", "POST"]
   }
 });
@@ -76,10 +96,9 @@ app.post('/api/login', (req, res) => {
 
     const token = jwt.sign({ id: user.id, name: user.name }, JWT_SECRET, { expiresIn: '1d' });
     
-    // Deep copy user data to avoid circular references and send only necessary data
     const userProfile = { id: user.id, name: user.name, avatarUrl: user.avatarUrl };
-    const contacts = user.contacts.map(cId => {
-        const contactUser = users[cId.id];
+    const contacts = user.contacts.map(c => {
+        const contactUser = users[c.id];
         return { id: contactUser.id, name: contactUser.name, avatarUrl: contactUser.avatarUrl, status: userSockets[contactUser.id] ? 'ONLINE' : 'OFFLINE' };
     });
 
@@ -114,8 +133,9 @@ app.get('/api/data', authenticateToken, (req, res) => {
     const userProfile = { id: user.id, name: user.name, avatarUrl: user.avatarUrl };
     const contacts = user.contacts.map(c => {
        const contactUser = users[c.id];
+       if (!contactUser) return null;
        return { id: contactUser.id, name: contactUser.name, avatarUrl: contactUser.avatarUrl, status: userSockets[contactUser.id] ? 'ONLINE' : 'OFFLINE' };
-    });
+    }).filter(Boolean); // Filter out nulls if a contact was deleted but still in list
     
     res.json({
       user: userProfile,
@@ -172,7 +192,7 @@ io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
 
   socket.on('register', (userId) => {
-    if (users[userId]) {
+    if (users[userId] !== undefined) {
         userSockets[userId] = socket.id;
         socket.userId = userId;
         users[userId].status = 'ONLINE';
@@ -204,25 +224,28 @@ io.on('connection', (socket) => {
   });
 
   socket.on('call-accepted', (data) => {
-    const { from, to, answer } = data; // from is the full profile of the acceptor
-    const toSocketId = userSockets[to.id];
+    const { fromId, toId, answer } = data;
+    const toSocketId = userSockets[toId]; // This is the original caller
      if (toSocketId) {
-        console.log(`Call accepted by ${from.name}. Sending answer to ${to.name}`);
-        io.to(toSocketId).emit('call-answered', { from, answer });
+        const fromUser = users[fromId];
+        console.log(`Call accepted by ${fromUser?.name}. Sending answer to original caller (ID: ${toId})`);
+        io.to(toSocketId).emit('call-answered', { answer });
     }
   });
 
   socket.on('ice-candidate', (data) => {
-    const { to, candidate } = data;
-    const toSocketId = userSockets[to.id];
+    const { to, candidate } = data; // 'to' is now an ID
+    const toSocketId = userSockets[to];
     if (toSocketId) {
+      // Send candidate to the other peer, but identify who it's from.
+      // The client doesn't need to know who it's from, it just adds it.
       io.to(toSocketId).emit('ice-candidate', { candidate });
     }
   });
 
   socket.on('end-call', (data) => {
-    const { to } = data;
-    const toSocketId = userSockets[to.id];
+    const { to } = data; // 'to' is an ID
+    const toSocketId = userSockets[to];
     if (toSocketId) {
       io.to(toSocketId).emit('call-ended');
     }
@@ -239,7 +262,7 @@ io.on('connection', (socket) => {
           }
       });
       delete userSockets[socket.userId];
-      console.log(`User ${socket.userId} unregistered.`);
+      console.log(`User ${socket.userId} (${users[socket.userId].name}) unregistered.`);
     }
   });
 });
