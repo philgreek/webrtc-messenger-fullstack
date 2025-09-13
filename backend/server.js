@@ -172,12 +172,10 @@ io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
 
   socket.on('register', (userId) => {
-    // Add a defensive check here
     if (users[userId]) {
         userSockets[userId] = socket.id;
         socket.userId = userId;
         users[userId].status = 'ONLINE';
-        // Notify contacts that this user is online
         users[userId].contacts.forEach(contact => {
             const contactSocketId = userSockets[contact.id];
             if (contactSocketId) {
@@ -191,16 +189,22 @@ io.on('connection', (socket) => {
   });
 
   socket.on('outgoing-call', (data) => {
-    const { from, to, offer, callType } = data;
-    const toSocketId = userSockets[to.id];
-    console.log(`Call attempt from ${from.name} (${from.id}) to ${to.name} (${to.id}) at socket ${toSocketId}`);
-    if (toSocketId) {
-      io.to(toSocketId).emit('incoming-call', { from, offer, callType });
+    const { fromId, toId, offer, callType } = data;
+    const toSocketId = userSockets[toId];
+    const fromUser = users[fromId];
+
+    console.log(`Call attempt from ${fromUser?.name} (ID: ${fromId}) to user ID ${toId} at socket ${toSocketId}`);
+
+    if (toSocketId && fromUser) {
+      const fromUserProfile = { id: fromUser.id, name: fromUser.name, avatarUrl: fromUser.avatarUrl, status: 'ONLINE' };
+      io.to(toSocketId).emit('incoming-call', { from: fromUserProfile, offer, callType });
+    } else {
+      console.log(`Call failed: Could not find user or socket. toSocketId: ${toSocketId}, fromUser: ${!!fromUser}`);
     }
   });
 
   socket.on('call-accepted', (data) => {
-    const { from, to, answer } = data;
+    const { from, to, answer } = data; // from is the full profile of the acceptor
     const toSocketId = userSockets[to.id];
      if (toSocketId) {
         console.log(`Call accepted by ${from.name}. Sending answer to ${to.name}`);
@@ -228,7 +232,6 @@ io.on('connection', (socket) => {
     console.log('User disconnected:', socket.id);
     if (socket.userId !== undefined && users[socket.userId]) {
       users[socket.userId].status = 'OFFLINE';
-      // Notify contacts that this user is offline
       users[socket.userId].contacts.forEach(contact => {
           const contactSocketId = userSockets[contact.id];
           if (contactSocketId) {
