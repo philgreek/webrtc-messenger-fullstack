@@ -41,7 +41,6 @@ const App: React.FC = () => {
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [isVideoEnabled, setIsVideoEnabled] = useState(false);
     
-    // New state to track the specific socket of the peer in a call
     const [peerSocketId, setPeerSocketId] = useState<string | null>(null);
 
     const callAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -102,7 +101,7 @@ const App: React.FC = () => {
         setIsVideoEnabled(false);
         cameraVideoTrackRef.current = null;
         peerConnectionRef.current = null;
-        setPeerSocketId(null); // Clean up peer socket ID
+        setPeerSocketId(null);
     }, [localStream, playSound]);
     
     const logCall = useCallback((call: Call, status: CallStatus) => {
@@ -138,12 +137,12 @@ const App: React.FC = () => {
             }
         };
 
-        const remoteStream = new MediaStream();
+        const remoteStreamMap = new Map<string, MediaStream>();
         pc.ontrack = (event) => {
-            event.streams[0].getTracks().forEach(track => {
-                remoteStream.addTrack(track);
-            });
-            setRemoteStreams([remoteStream]);
+            const [remoteStream] = event.streams;
+            if (remoteStream) {
+                 setRemoteStreams([remoteStream]);
+            }
         };
         
         localStream?.getTracks().forEach(track => {
@@ -178,10 +177,16 @@ const App: React.FC = () => {
         playSound('calling');
         
         try {
-            await setupMedia(type);
+            const stream = await setupMedia(type);
+            const pc = createPeerConnection();
+            stream.getTracks().forEach(track => pc.addTrack(track, stream));
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            
             socketRef.current?.emit('outgoing-call', { 
                 fromId: userProfile.id, 
                 toId: target.id, 
+                offer,
                 callType: type 
             });
         } catch (error) {
@@ -189,7 +194,7 @@ const App: React.FC = () => {
             alert('Could not access camera/microphone. Please check permissions.');
             cleanupCall();
         }
-    }, [userProfile, playSound, cleanupCall, setupMedia]);
+    }, [userProfile, playSound, cleanupCall, setupMedia, createPeerConnection]);
     
     const handleAcceptCall = useCallback(async () => {
         if (!currentCall || !peerConnectionRef.current || !userProfile || !peerSocketId) return;
@@ -210,11 +215,11 @@ const App: React.FC = () => {
     }, [currentCall, userProfile, peerSocketId, playSound, handleEndCall]);
 
     const handleIncomingCall = useCallback(async ({ from, offer, callType, fromSocketId }: { from: Contact, offer: RTCSessionDescriptionInit, callType: CallType, fromSocketId: string }) => {
-        if (appState !== AppState.CONTACTS && appState !== AppState.CALL_HISTORY && appState !== AppState.SETTINGS && appState !== AppState.USER_PROFILE) return;
+        if (currentCall) return; // Already in a call
         
         const call: Call = { target: from, type: callType, direction: 'incoming' };
         setCurrentCall(call);
-        setPeerSocketId(fromSocketId); // CRITICAL: Store the specific socket ID of the caller
+        setPeerSocketId(fromSocketId);
         setAppState(AppState.INCOMING_CALL);
         playSound('incoming', from);
         
@@ -229,22 +234,16 @@ const App: React.FC = () => {
             console.error('Failed to handle incoming call:', error);
             cleanupCall();
         }
-    }, [appState, createPeerConnection, playSound, cleanupCall, setupMedia]);
+    }, [currentCall, createPeerConnection, playSound, cleanupCall, setupMedia]);
 
     const handleCallAnswered = useCallback(async ({ answer, fromSocketId }: { answer: RTCSessionDescriptionInit, fromSocketId: string }) => {
         playSound('none');
         if (peerConnectionRef.current) {
-            setPeerSocketId(fromSocketId); // CRITICAL: Store the specific socket ID of the peer who answered
+            setPeerSocketId(fromSocketId);
             await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer));
             setAppState(AppState.IN_CALL);
         }
     }, [playSound]);
-    
-    // This is now called from the outgoing call flow to set up the peer connection
-    const setupPeerConnectionForCaller = useCallback(async (offer: RTCSessionDescriptionInit) => {
-        const pc = createPeerConnection();
-        await pc.setLocalDescription(new RTCSessionDescription(offer));
-    }, [createPeerConnection]);
 
     const handleNewICECandidate = useCallback(async ({ candidate }: { candidate: RTCIceCandidateInit }) => {
         if (peerConnectionRef.current) {
@@ -256,6 +255,17 @@ const App: React.FC = () => {
     const handleStatusUpdate = useCallback(({ userId, status }: { userId: number, status: ContactStatus }) => {
         setContacts(prevContacts => prevContacts.map(c => c.id === userId ? { ...c, status } : c));
     }, []);
+    
+    const handleInitialStatuses = useCallback((statuses: { userId: number, status: ContactStatus }[]) => {
+        setContacts(prevContacts => {
+            const statusMap = new Map(statuses.map(s => [s.userId, s.status]));
+            return prevContacts.map(c => ({
+                ...c,
+                status: statusMap.get(c.id) || c.status,
+            }));
+        });
+    }, []);
+
 
     useEffect(() => {
         const attemptAutoLogin = async () => {
@@ -292,20 +302,15 @@ const App: React.FC = () => {
             socketRef.current = socket;
             socket.on('connect', () => socket.emit('register', userProfile.id));
             socket.on('incoming-call', handleIncomingCall);
-            
-            // This is a new event just for the caller
-            socket.on('call-initiated', async ({ offer }) => {
-                await setupPeerConnectionForCaller(offer);
-            });
-
             socket.on('call-answered', handleCallAnswered);
             socket.on('ice-candidate', handleNewICECandidate);
             socket.on('call-ended', () => handleEndCall(false));
             socket.on('status-update', handleStatusUpdate);
+            socket.on('initial-statuses', handleInitialStatuses); // Listen for the new event
 
             return () => { socket.disconnect(); };
         }
-    }, [isAuthenticated, userProfile, handleEndCall, handleIncomingCall, handleCallAnswered, handleNewICECandidate, handleStatusUpdate, setupPeerConnectionForCaller]);
+    }, [isAuthenticated, userProfile, handleEndCall, handleIncomingCall, handleCallAnswered, handleNewICECandidate, handleStatusUpdate, handleInitialStatuses]);
 
     const handleSwitchCamera = useCallback(async (facingMode: 'user' | 'environment') => {
         if (!localStream || !peerConnectionRef.current) return;
@@ -315,6 +320,7 @@ const App: React.FC = () => {
             const sender = peerConnectionRef.current.getSenders().find(s => s.track?.kind === 'video');
             if (sender) {
                 await sender.replaceTrack(newVideoTrack);
+                localStream.getTracks().forEach(track => track.stop()); // Stop old stream tracks
                 setLocalStream(newStream);
                 cameraVideoTrackRef.current = newVideoTrack;
             }
@@ -327,8 +333,8 @@ const App: React.FC = () => {
         if (sender) {
             await sender.replaceTrack(cameraVideoTrackRef.current);
         }
-        const audioTracks = localStream?.getAudioTracks() || [];
-        const newStream = new MediaStream([cameraVideoTrackRef.current, ...audioTracks]);
+        localStream?.getTracks().forEach(track => track.stop());
+        const newStream = new MediaStream([cameraVideoTrackRef.current, ...((await navigator.mediaDevices.getUserMedia({audio: true})).getAudioTracks())]);
         setLocalStream(newStream);
         setIsScreenSharing(false);
     }, [localStream]);
@@ -342,6 +348,7 @@ const App: React.FC = () => {
             const sender = peerConnectionRef.current.getSenders().find(s => s.track?.kind === 'video');
             if (sender) await sender.replaceTrack(screenTrack);
             const audioTracks = localStream?.getAudioTracks() || [];
+            localStream?.getVideoTracks().forEach(track => track.stop());
             const newStream = new MediaStream([screenTrack, ...audioTracks]);
             setLocalStream(newStream);
             setIsScreenSharing(true);
@@ -352,6 +359,7 @@ const App: React.FC = () => {
     const handleToggleScreenShare = useCallback(() => { isScreenSharing ? stopScreenShare() : startScreenShare(); }, [isScreenSharing, startScreenShare, stopScreenShare]);
     const handleToggleVideo = useCallback(() => {
         if (localStream) {
+            // FIX: Corrected a typo in the variable name from `newVideoVAI Stare` to `newVideoState`.
             const newVideoState = !isVideoEnabled;
             localStream.getVideoTracks().forEach(track => track.enabled = newVideoState);
             setIsVideoEnabled(newVideoState);
