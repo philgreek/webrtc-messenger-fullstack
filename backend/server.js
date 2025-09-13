@@ -56,10 +56,9 @@ const createInitialUser = (name, password) => {
 
 const alice = createInitialUser('Alice', 'password123');
 const bob = createInitialUser('Bob', 'password123');
-alice.contacts.push({ id: bob.id, name: bob.name, avatarUrl: bob.avatarUrl, status: 'OFFLINE' });
-bob.contacts.push({ id: alice.id, name: alice.name, avatarUrl: alice.avatarUrl, status: 'OFFLINE' });
+alice.contacts.push({ id: bob.id });
+bob.contacts.push({ id: alice.id });
 
-// --- ARCHITECTURAL UPGRADE: Multi-device support ---
 // Maps a userId to a Set of their active socket.ids
 const userSockets = new Map(); // { userId => Set(socketId1, socketId2, ...) }
 
@@ -134,12 +133,10 @@ app.post('/api/contacts/add', authenticateToken, (req, res) => {
     if (contactToAdd.id === currentUser.id) return res.status(400).json({ message: "You cannot add yourself as a contact" });
     if (currentUser.contacts.some(c => c.id === contactToAdd.id)) return res.status(400).json({ message: "This user is already in your contacts" });
 
+    currentUser.contacts.push({ id: contactToAdd.id });
+    contactToAdd.contacts.push({ id: currentUser.id });
+
     const newContactForCurrentUser = { id: contactToAdd.id, name: contactToAdd.name, avatarUrl: contactToAdd.avatarUrl, status: userSockets.has(contactToAdd.id) ? 'ONLINE' : 'OFFLINE' };
-    currentUser.contacts.push(newContactForCurrentUser);
-
-    const newContactForOtherUser = { id: currentUser.id, name: currentUser.name, avatarUrl: currentUser.avatarUrl, status: 'ONLINE' };
-    contactToAdd.contacts.push(newContactForOtherUser);
-
     res.status(201).json(newContactForCurrentUser);
 });
 
@@ -160,7 +157,6 @@ io.on('connection', (socket) => {
     }
     userSockets.get(userId).add(socket.id);
     
-    users[userId].status = 'ONLINE';
     // Notify all contacts that this user is now online
     users[userId].contacts.forEach(contact => {
         const contactSocketIds = userSockets.get(contact.id);
@@ -170,6 +166,14 @@ io.on('connection', (socket) => {
             });
         }
     });
+
+    // CRITICAL FIX: Send the current statuses of all contacts to the newly connected user
+    const initialStatuses = users[userId].contacts.map(contact => {
+        const isOnline = userSockets.has(contact.id) && userSockets.get(contact.id).size > 0;
+        return { userId: contact.id, status: isOnline ? 'ONLINE' : 'OFFLINE' };
+    });
+    socket.emit('initial-statuses', initialStatuses);
+
     console.log(`User ${userId} (${users[userId].name}) registered. Sockets: ${[...userSockets.get(userId)]}`);
   });
 
@@ -181,28 +185,27 @@ io.on('connection', (socket) => {
     if (toSocketIds && fromUser) {
       console.log(`Call attempt from ${fromUser.name} to ${users[toId].name}. Sending to sockets: ${[...toSocketIds]}`);
       const fromUserProfile = { id: fromUser.id, name: fromUser.name, avatarUrl: fromUser.avatarUrl, status: 'ONLINE' };
-      // Send call to all devices of the target user
       toSocketIds.forEach(socketId => {
         io.to(socketId).emit('incoming-call', { 
             from: fromUserProfile, 
             offer, 
             callType,
-            fromSocketId: socket.id // CRITICAL: Tell the receiver which specific socket is calling
+            fromSocketId: socket.id
         });
       });
     } else {
-      console.log(`Call failed: Could not find user or sockets. toSocketIds: ${toSocketIds}, fromUser: ${!!fromUser}`);
+      console.log(`Call failed: Could not find user or sockets. toId: ${toId}, fromId: ${fromId}`);
     }
   });
 
   socket.on('call-accepted', (data) => {
-    const { fromId, toSocketId, answer } = data; // toSocketId is the specific socket of the original caller
+    const { fromId, toSocketId, answer } = data;
      if (toSocketId) {
         const fromUser = users[fromId];
         console.log(`Call accepted by ${fromUser?.name}. Sending answer to original caller at socket ${toSocketId}`);
         io.to(toSocketId).emit('call-answered', { 
             answer, 
-            fromSocketId: socket.id // CRITICAL: Tell the original caller which socket answered
+            fromSocketId: socket.id
         });
     }
   });
@@ -228,22 +231,22 @@ io.on('connection', (socket) => {
         const userSocketSet = userSockets.get(userId);
         userSocketSet.delete(socket.id);
 
-        console.log(`User ${userId} (${users[userId].name}) unregistered socket ${socket.id}. Remaining sockets: ${[...userSocketSet]}`);
+        console.log(`User ${userId} (${users[userId]?.name}) unregistered socket ${socket.id}. Remaining sockets: ${[...userSocketSet]}`);
 
-        // If it was the last device, set status to offline
         if (userSocketSet.size === 0) {
             userSockets.delete(userId);
-            users[userId].status = 'OFFLINE';
-            console.log(`User ${userId} is now fully offline.`);
             // Notify all contacts that this user is now offline
-            users[userId].contacts.forEach(contact => {
-                const contactSocketIds = userSockets.get(contact.id);
-                if (contactSocketIds) {
-                    contactSocketIds.forEach(contactSocketId => {
-                        io.to(contactSocketId).emit('status-update', { userId: userId, status: 'OFFLINE' });
-                    });
-                }
-            });
+            if(users[userId]) {
+                users[userId].contacts.forEach(contact => {
+                    const contactSocketIds = userSockets.get(contact.id);
+                    if (contactSocketIds) {
+                        contactSocketIds.forEach(contactSocketId => {
+                            io.to(contactSocketId).emit('status-update', { userId: userId, status: 'OFFLINE' });
+                        });
+                    }
+                });
+            }
+            console.log(`User ${userId} is now fully offline.`);
         }
     }
   });
