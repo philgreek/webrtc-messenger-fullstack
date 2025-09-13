@@ -12,7 +12,7 @@ import { AuthScreen } from './components/AuthScreen';
 
 declare const io: any;
 
-const BACKEND_URL = 'https://webrtc-messenger-fullstack-server.onrender.com';
+const BACKEND_URL = 'http://localhost:3001';
 
 const DEFAULT_SETTINGS: NotificationSettings = {
     masterMute: false,
@@ -140,7 +140,6 @@ const App: React.FC = () => {
         };
 
         pc.ontrack = (event) => {
-            // FIX: Convert readonly MediaStream[] to mutable array before setting state.
             setRemoteStreams([...event.streams]);
         };
         
@@ -177,7 +176,14 @@ const App: React.FC = () => {
             createPeerConnection(call);
             const offer = await peerConnectionRef.current?.createOffer();
             await peerConnectionRef.current?.setLocalDescription(offer);
-            socketRef.current?.emit('outgoing-call', { from: userProfile, to: target, offer, callType: type });
+            
+            socketRef.current?.emit('outgoing-call', { 
+                fromId: userProfile.id, 
+                toId: target.id, 
+                offer, 
+                callType: type 
+            });
+
         } catch (error) {
             console.error('Failed to start call:', error);
             alert('Could not access camera/microphone. Please check permissions.');
