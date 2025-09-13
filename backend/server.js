@@ -10,7 +10,8 @@ const app = express();
 const allowedOrigins = [
     'https://connectsphere-messenger.vercel.app', 
     'http://localhost:5173',
-    'http://localhost:3000'
+    'http://localhost:3000',
+    'http://127.0.0.1:5173'
 ];
 
 const corsOptions = {
@@ -59,8 +60,9 @@ const bob = createInitialUser('Bob', 'password123');
 alice.contacts.push({ id: bob.id });
 bob.contacts.push({ id: alice.id });
 
-// Maps a userId to a Set of their active socket.ids
 const userSockets = new Map(); // { userId => Set(socketId1, socketId2, ...) }
+const activeCalls = new Map(); // { socketId1 => socketId2, socketId2 => socketId1 }
+
 
 // --- API Routes ---
 
@@ -82,7 +84,8 @@ app.post('/api/login', (req, res) => {
     const userProfile = { id: user.id, name: user.name, avatarUrl: user.avatarUrl };
     const contacts = user.contacts.map(c => {
         const contactUser = users[c.id];
-        return { id: contactUser.id, name: contactUser.name, avatarUrl: contactUser.avatarUrl, status: userSockets.has(contactUser.id) ? 'ONLINE' : 'OFFLINE' };
+        const isOnline = userSockets.has(contactUser.id) && userSockets.get(contactUser.id).size > 0;
+        return { id: contactUser.id, name: contactUser.name, avatarUrl: contactUser.avatarUrl, status: isOnline ? 'ONLINE' : 'OFFLINE' };
     });
 
     res.json({ token, user: userProfile, contacts, groups: user.groups });
@@ -107,7 +110,8 @@ app.get('/api/data', authenticateToken, (req, res) => {
     const contacts = user.contacts.map(c => {
        const contactUser = users[c.id];
        if (!contactUser) return null;
-       return { id: contactUser.id, name: contactUser.name, avatarUrl: contactUser.avatarUrl, status: userSockets.has(contactUser.id) ? 'ONLINE' : 'OFFLINE' };
+       const isOnline = userSockets.has(contactUser.id) && userSockets.get(contactUser.id).size > 0;
+       return { id: contactUser.id, name: contactUser.name, avatarUrl: contactUser.avatarUrl, status: isOnline ? 'ONLINE' : 'OFFLINE' };
     }).filter(Boolean);
     
     res.json({ user: userProfile, contacts, groups: user.groups });
@@ -135,12 +139,23 @@ app.post('/api/contacts/add', authenticateToken, (req, res) => {
 
     currentUser.contacts.push({ id: contactToAdd.id });
     contactToAdd.contacts.push({ id: currentUser.id });
-
-    const newContactForCurrentUser = { id: contactToAdd.id, name: contactToAdd.name, avatarUrl: contactToAdd.avatarUrl, status: userSockets.has(contactToAdd.id) ? 'ONLINE' : 'OFFLINE' };
+    
+    const isOnline = userSockets.has(contactToAdd.id) && userSockets.get(contactToAdd.id).size > 0;
+    const newContactForCurrentUser = { id: contactToAdd.id, name: contactToAdd.name, avatarUrl: contactToAdd.avatarUrl, status: isOnline ? 'ONLINE' : 'OFFLINE' };
     res.status(201).json(newContactForCurrentUser);
 });
 
-// --- Socket.IO Signaling with Multi-Device Support ---
+// --- Socket.IO Signaling with Multi-Device Support & Active Call Tracking ---
+
+const cleanupCallState = (socketId) => {
+    const peerSocketId = activeCalls.get(socketId);
+    if (peerSocketId) {
+        io.to(peerSocketId).emit('call-ended');
+        activeCalls.delete(peerSocketId);
+    }
+    activeCalls.delete(socketId);
+    console.log(`Cleaned up call state for socket ${socketId}`);
+};
 
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
@@ -157,7 +172,6 @@ io.on('connection', (socket) => {
     }
     userSockets.get(userId).add(socket.id);
     
-    // Notify all contacts that this user is now online
     users[userId].contacts.forEach(contact => {
         const contactSocketIds = userSockets.get(contact.id);
         if (contactSocketIds) {
@@ -167,7 +181,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // CRITICAL FIX: Send the current statuses of all contacts to the newly connected user
     const initialStatuses = users[userId].contacts.map(contact => {
         const isOnline = userSockets.has(contact.id) && userSockets.get(contact.id).size > 0;
         return { userId: contact.id, status: isOnline ? 'ONLINE' : 'OFFLINE' };
@@ -203,6 +216,10 @@ io.on('connection', (socket) => {
      if (toSocketId) {
         const fromUser = users[fromId];
         console.log(`Call accepted by ${fromUser?.name}. Sending answer to original caller at socket ${toSocketId}`);
+        
+        activeCalls.set(socket.id, toSocketId);
+        activeCalls.set(toSocketId, socket.id);
+
         io.to(toSocketId).emit('call-answered', { 
             answer, 
             fromSocketId: socket.id
@@ -219,23 +236,21 @@ io.on('connection', (socket) => {
 
   socket.on('end-call', (data) => {
     const { toSocketId } = data;
-    if (toSocketId) {
-      io.to(toSocketId).emit('call-ended');
-    }
+    cleanupCallState(toSocketId);
+    cleanupCallState(socket.id);
   });
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
+    cleanupCallState(socket.id); // GUARANTEED CALL ENDING
+
     const userId = socket.userId;
     if (userId !== undefined && userSockets.has(userId)) {
         const userSocketSet = userSockets.get(userId);
         userSocketSet.delete(socket.id);
 
-        console.log(`User ${userId} (${users[userId]?.name}) unregistered socket ${socket.id}. Remaining sockets: ${[...userSocketSet]}`);
-
         if (userSocketSet.size === 0) {
             userSockets.delete(userId);
-            // Notify all contacts that this user is now offline
             if(users[userId]) {
                 users[userId].contacts.forEach(contact => {
                     const contactSocketIds = userSockets.get(contact.id);
