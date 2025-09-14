@@ -59,8 +59,13 @@ const createInitialUser = (name, password) => {
 
 const alice = createInitialUser('Alice', 'password123');
 const bob = createInitialUser('Bob', 'password123');
+const you = createInitialUser('You', 'password123'); // For initial testing
 alice.contacts.push({ id: bob.id });
 bob.contacts.push({ id: alice.id });
+you.contacts.push({ id: alice.id }, {id: bob.id});
+alice.contacts.push({id: you.id});
+bob.contacts.push({id: you.id});
+
 
 const userSockets = new Map(); // { userId => Set(socketId1, socketId2, ...) }
 const activeCalls = new Map(); // { socketId1 => socketId2, socketId2 => socketId1 }
@@ -183,6 +188,7 @@ io.on('connection', (socket) => {
         }
     });
 
+    // CRITICAL FIX: Send the current statuses of all contacts to the newly connected user
     const initialStatuses = users[userId].contacts.map(contact => {
         const isOnline = userSockets.has(contact.id) && userSockets.get(contact.id).size > 0;
         return { userId: contact.id, status: isOnline ? 'ONLINE' : 'OFFLINE' };
