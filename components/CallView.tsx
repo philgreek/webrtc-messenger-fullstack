@@ -19,8 +19,8 @@ interface CallViewProps {
   onToggleVideo: () => void;
 }
 
-const MUTE_SOUND_URL = 'https://cdn.pixabay.com/audio/2021/08/04/audio_52c4226f33.mp3'; // Click off
-const UNMUTE_SOUND_URL = 'https://cdn.pixabay.com/audio/2022/03/10/audio_c848a6323c.mp3'; // Click on
+const MUTE_SOUND_URL = 'https://storage.googleapis.com/messenger-sounds/click-off.mp3';
+const UNMUTE_SOUND_URL = 'https://storage.googleapis.com/messenger-sounds/click-on.mp3';
 
 const formatDuration = (seconds: number): string => {
     const minutes = Math.floor(seconds / 60);
@@ -28,20 +28,16 @@ const formatDuration = (seconds: number): string => {
     return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
 };
 
-const LocalVideo: React.FC<{ stream: MediaStream | null, isMuted: boolean }> = ({ stream, isMuted }) => {
+const VideoPlayer: React.FC<{ stream: MediaStream | null, isMuted: boolean, isMirrored: boolean, objectFit?: 'contain' | 'cover' }> = ({ stream, isMuted, isMirrored, objectFit = 'cover' }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     useEffect(() => {
-        if (videoRef.current && stream) videoRef.current.srcObject = stream;
+        if (videoRef.current && stream) {
+            if (videoRef.current.srcObject !== stream) {
+               videoRef.current.srcObject = stream;
+            }
+        }
     }, [stream]);
-    return <video ref={videoRef} autoPlay playsInline muted={isMuted} className="w-full h-full object-cover transform -scale-x-100"></video>;
-};
-
-const MainRemoteVideo: React.FC<{ stream: MediaStream | null, isScreenSharing: boolean }> = ({ stream, isScreenSharing }) => {
-    const videoRef = useRef<HTMLVideoElement>(null);
-    useEffect(() => {
-        if (videoRef.current && stream) videoRef.current.srcObject = stream;
-    }, [stream]);
-    return <video ref={videoRef} autoPlay playsInline className={`w-full h-full object-cover ${isScreenSharing ? '' : 'transform -scale-x-100'}`}></video>;
+    return <video ref={videoRef} autoPlay playsInline muted={isMuted} className={`w-full h-full ${isMirrored ? 'transform -scale-x-100' : ''}`} style={{ objectFit }}></video>;
 };
 
 export const CallView: React.FC<CallViewProps> = ({
@@ -90,7 +86,8 @@ export const CallView: React.FC<CallViewProps> = ({
         playMuteToggleSound(newMutedState);
     }, [isMuted, localStream, playMuteToggleSound]);
     
-    const handleSwitchCameraInternal = (newMode: 'user' | 'environment') => {
+    const handleSwitchCameraInternal = () => {
+        const newMode = facingMode === 'user' ? 'environment' : 'user';
         setFacingMode(newMode);
         onSwitchCamera(newMode);
     }
@@ -114,7 +111,7 @@ export const CallView: React.FC<CallViewProps> = ({
                     <IconButton size="medium" onClick={onToggleVideo}>{isVideoEnabled ? <VideoOffIcon className="w-6 h-6" /> : <VideoIcon className="w-6 h-6" />}</IconButton>
                     {isVideoEnabled && (
                         <>
-                            <IconButton size="medium" onClick={() => handleSwitchCameraInternal(facingMode === 'user' ? 'environment' : 'user')} disabled={isGroupCall || isScreenSharing}><SwitchCameraIcon className={`w-6 h-6 ${(isGroupCall || isScreenSharing) ? 'text-gray-500' : ''}`} /></IconButton>
+                            <IconButton size="medium" onClick={handleSwitchCameraInternal} disabled={isGroupCall || isScreenSharing}><SwitchCameraIcon className={`w-6 h-6 ${(isGroupCall || isScreenSharing) ? 'text-gray-500' : ''}`} /></IconButton>
                             <IconButton size="medium" onClick={onToggleScreenShare} disabled={isGroupCall}><ScreenShareIcon className={`w-6 h-6 ${isScreenSharing ? 'text-blue-400' : ''} ${isGroupCall ? 'text-gray-500' : ''}`} /></IconButton>
                             {!isGroupCall && <IconButton size="medium" onClick={handleSwapVideo}><SwapIcon className="w-6 h-6" /></IconButton>}
                         </>
@@ -132,6 +129,14 @@ export const CallView: React.FC<CallViewProps> = ({
         </div>
     );
 
+    const MainView = isLocalVideoSwapped ? 
+        <VideoPlayer stream={localStream} isMuted={true} isMirrored={facingMode === 'user' && !isScreenSharing} objectFit={isScreenSharing ? 'contain' : 'cover'} /> : 
+        <VideoPlayer stream={remoteStreams?.[0] || null} isMuted={false} isMirrored={false} objectFit={isScreenSharing ? 'contain' : 'cover'}/>;
+    
+    const PipView = isLocalVideoSwapped ?
+        <VideoPlayer stream={remoteStreams?.[0] || null} isMuted={false} isMirrored={false} objectFit="cover"/> :
+        <VideoPlayer stream={localStream} isMuted={true} isMirrored={facingMode === 'user' && !isScreenSharing} objectFit="cover"/>;
+
     return (
         <div className="h-full w-full bg-gray-800 flex flex-col justify-center items-center relative">
             {isMuted && isInCall && (
@@ -141,22 +146,21 @@ export const CallView: React.FC<CallViewProps> = ({
                 </div>
             )}
 
-            {/* Main Content Area */}
             {isInCall && type === CallType.VIDEO && isVideoEnabled ? (
                 <div className="absolute inset-0 z-10 bg-black">
-                    {isGroupCall ? (
+                     {isGroupCall ? (
                         <div className="w-full h-full grid grid-cols-2 auto-rows-fr gap-1 p-1">
-                            <div className="bg-gray-700 rounded-md overflow-hidden relative"><LocalVideo stream={localStream} isMuted={true} /><div className="absolute bottom-1 left-2 bg-black/50 text-white text-xs px-1.5 py-0.5 rounded">You</div></div>
+                           <div className="bg-gray-700 rounded-md overflow-hidden relative"><VideoPlayer stream={localStream} isMuted={true} isMirrored={true} /><div className="absolute bottom-1 left-2 bg-black/50 text-white text-xs px-1.5 py-0.5 rounded">You</div></div>
                             {remoteStreams?.map((stream, index) => (
-                                <div key={index} className="bg-gray-700 rounded-md overflow-hidden relative"><MainRemoteVideo stream={stream} isScreenSharing={false} /><div className="absolute bottom-1 left-2 bg-black/50 text-white text-xs px-1.5 py-0.5 rounded">{`Participant ${index + 1}`}</div></div>
+                                <div key={index} className="bg-gray-700 rounded-md overflow-hidden relative"><VideoPlayer stream={stream} isMuted={false} isMirrored={false} /><div className="absolute bottom-1 left-2 bg-black/50 text-white text-xs px-1.5 py-0.5 rounded">{`Participant ${index + 1}`}</div></div>
                             ))}
                         </div>
                     ) : (
                         <div className="relative w-full h-full">
-                            <div className={`w-full h-full ${isLocalVideoSwapped ? 'hidden' : ''}`}><MainRemoteVideo stream={remoteStreams?.[0] || null} isScreenSharing={isScreenSharing} /></div>
-                            <div className={`w-full h-full ${!isLocalVideoSwapped ? 'hidden' : ''}`}><LocalVideo stream={localStream} isMuted={false} /></div>
-                            <div className={`absolute top-4 right-4 w-32 h-48 rounded-lg overflow-hidden shadow-lg border-2 border-white transition-all duration-300 ${isLocalVideoSwapped ? 'hidden' : ''}`}><LocalVideo stream={localStream} isMuted={true} /></div>
-                            <div className={`absolute top-4 right-4 w-32 h-48 rounded-lg overflow-hidden shadow-lg border-2 border-white transition-all duration-300 ${!isLocalVideoSwapped ? 'hidden' : ''}`}><MainRemoteVideo stream={remoteStreams?.[0] || null} isScreenSharing={false} /></div>
+                           {MainView}
+                           <div className="absolute top-4 right-4 w-32 h-48 rounded-lg overflow-hidden shadow-lg border-2 border-white/50 transition-all duration-300">
+                               {PipView}
+                           </div>
                         </div>
                     )}
                      <div className="absolute top-0 left-0 p-4 bg-gradient-to-b from-black/60 to-transparent w-full z-20">
@@ -177,7 +181,6 @@ export const CallView: React.FC<CallViewProps> = ({
                 </div>
             )}
             
-            {/* Controls are now always at the bottom */}
             <div className="absolute bottom-0 left-0 right-0 z-20 pb-8 pt-4 px-4 bg-gradient-to-t from-black/50 to-transparent">
                 {callControls}
             </div>
