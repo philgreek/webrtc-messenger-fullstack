@@ -60,16 +60,6 @@ const createInitialUser = (name, password) => {
 const alice = createInitialUser('Alice', 'password123');
 const bob = createInitialUser('Bob', 'password123');
 const you = createInitialUser('You', 'password123'); // For initial testing
-alice.contacts.push({ id: bob.id });
-bob.contacts.push({ id: alice.id });
-you.contacts.push({ id: alice.id }, {id: bob.id});
-alice.contacts.push({id: you.id});
-bob.contacts.push({id: you.id});
-
-
-const userSockets = new Map(); // { userId => Set(socketId1, socketId2, ...) }
-const activeCalls = new Map(); // { socketId1 => socketId2, socketId2 => socketId1 }
-
 
 // --- API Routes ---
 
@@ -92,7 +82,7 @@ app.post('/api/login', (req, res) => {
     const contacts = user.contacts.map(c => {
         const contactUser = users[c.id];
         const isOnline = userSockets.has(contactUser.id) && userSockets.get(contactUser.id).size > 0;
-        return { id: contactUser.id, name: contactUser.name, avatarUrl: contactUser.avatarUrl, status: isOnline ? 'ONLINE' : 'OFFLINE' };
+        return { id: contactUser.id, name: contactUser.name, avatarUrl: contactUser.avatarUrl, status: isOnline ? 'ONLINE' : 'OFFLINE', nickname: c.nickname };
     });
 
     res.json({ token, user: userProfile, contacts, groups: user.groups });
@@ -118,7 +108,7 @@ app.get('/api/data', authenticateToken, (req, res) => {
        const contactUser = users[c.id];
        if (!contactUser) return null;
        const isOnline = userSockets.has(contactUser.id) && userSockets.get(contactUser.id).size > 0;
-       return { id: contactUser.id, name: contactUser.name, avatarUrl: contactUser.avatarUrl, status: isOnline ? 'ONLINE' : 'OFFLINE' };
+       return { id: contactUser.id, name: contactUser.name, avatarUrl: contactUser.avatarUrl, status: isOnline ? 'ONLINE' : 'OFFLINE', nickname: c.nickname };
     }).filter(Boolean);
     
     res.json({ user: userProfile, contacts, groups: user.groups });
@@ -154,6 +144,10 @@ app.post('/api/contacts/add', authenticateToken, (req, res) => {
 
 // --- Socket.IO Signaling with Multi-Device Support & Active Call Tracking ---
 
+const userSockets = new Map(); // { userId => Set(socketId1, socketId2, ...) }
+const activeCalls = new Map(); // { socketId1 => socketId2, socketId2 => socketId1 }
+
+
 const cleanupCallState = (socketId) => {
     const peerSocketId = activeCalls.get(socketId);
     if (peerSocketId) {
@@ -180,6 +174,8 @@ io.on('connection', (socket) => {
     userSockets.get(userId).add(socket.id);
     
     users[userId].contacts.forEach(contact => {
+        const contactUser = users[contact.id];
+        if(!contactUser) return;
         const contactSocketIds = userSockets.get(contact.id);
         if (contactSocketIds) {
             contactSocketIds.forEach(contactSocketId => {
@@ -190,9 +186,11 @@ io.on('connection', (socket) => {
 
     // CRITICAL FIX: Send the current statuses of all contacts to the newly connected user
     const initialStatuses = users[userId].contacts.map(contact => {
+        const contactUser = users[contact.id];
+        if(!contactUser) return null;
         const isOnline = userSockets.has(contact.id) && userSockets.get(contact.id).size > 0;
         return { userId: contact.id, status: isOnline ? 'ONLINE' : 'OFFLINE' };
-    });
+    }).filter(Boolean);
     socket.emit('initial-statuses', initialStatuses);
 
     console.log(`User ${userId} (${users[userId].name}) registered. Sockets: ${[...userSockets.get(userId)]}`);
@@ -261,6 +259,8 @@ io.on('connection', (socket) => {
             userSockets.delete(userId);
             if(users[userId]) {
                 users[userId].contacts.forEach(contact => {
+                    const contactUser = users[contact.id];
+                    if(!contactUser) return;
                     const contactSocketIds = userSockets.get(contact.id);
                     if (contactSocketIds) {
                         contactSocketIds.forEach(contactSocketId => {
