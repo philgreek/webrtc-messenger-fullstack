@@ -15,7 +15,7 @@ const BACKEND_URL = 'https://webrtc-messenger-fullstack-server.onrender.com';
 
 const DEFAULT_SETTINGS: NotificationSettings = {
     masterMute: false,
-    soundUrl: 'https://cdn.pixabay.com/audio/2022/05/27/audio_132d7321b3.mp3',
+    soundUrl: 'https://storage.googleapis.com/messenger-sounds/digital-ringtone.mp3',
     mutedContacts: [],
 };
 
@@ -23,6 +23,7 @@ const STUN_SERVERS = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
     ],
 };
 
@@ -49,7 +50,7 @@ const App: React.FC = () => {
     const cameraVideoTrackRef = useRef<MediaStreamTrack | null>(null);
     
     // This ref helps manage remote tracks reliably
-    const remoteStreamTracks = useRef(new Map<string, MediaStreamTrack>());
+    const remoteStreamRef = useRef<MediaStream | null>(null);
 
 
     const handleSuccessfulAuth = useCallback((data: AuthData) => {
@@ -85,7 +86,7 @@ const App: React.FC = () => {
             if (target && 'status' in target && notificationSettings.mutedContacts.includes(target.id)) return;
         }
         const url = sound === 'calling' 
-            ? 'https://cdn.pixabay.com/audio/2022/08/22/audio_107945d898.mp3'
+            ? 'https://storage.googleapis.com/messenger-sounds/calling-sound.mp3'
             : notificationSettings.soundUrl;
         callAudioRef.current = new Audio(url);
         callAudioRef.current.loop = true;
@@ -98,7 +99,7 @@ const App: React.FC = () => {
         
         setLocalStream(null);
         setRemoteStreams([]);
-        remoteStreamTracks.current.clear();
+        remoteStreamRef.current = null;
         setCurrentCall(null);
         setAppState(AppState.CONTACTS);
         playSound('none');
@@ -145,13 +146,11 @@ const App: React.FC = () => {
         };
     
         pc.ontrack = (event) => {
-            console.log("Track received:", event.track.kind, "for stream:", event.streams[0].id);
-            // This is the robust way to handle incoming tracks
-            event.streams[0].getTracks().forEach(track => {
-                remoteStreamTracks.current.set(track.id, track);
-            });
-            const stream = new MediaStream(Array.from(remoteStreamTracks.current.values()));
-            setRemoteStreams([stream]);
+            if (!remoteStreamRef.current) {
+                remoteStreamRef.current = new MediaStream();
+                setRemoteStreams([remoteStreamRef.current]);
+            }
+            remoteStreamRef.current.addTrack(event.track);
         };
         
         localStream?.getTracks().forEach(track => {
@@ -192,23 +191,31 @@ const App: React.FC = () => {
         playSound('calling');
         
         try {
-            const stream = await setupMedia(type);
-            const pc = createPeerConnection();
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            
-            socketRef.current?.emit('outgoing-call', { 
-                fromId: userProfile.id, 
-                toId: target.id, 
-                offer,
-                callType: type 
-            });
+            await setupMedia(type);
         } catch (error) {
             console.error('Failed to start call:', error);
             alert('Could not access camera/microphone. Please check permissions.');
             cleanupCall();
         }
-    }, [userProfile, playSound, cleanupCall, setupMedia, createPeerConnection]);
+    }, [userProfile, playSound, cleanupCall, setupMedia]);
+
+    useEffect(() => {
+        if (appState === AppState.OUTGOING_CALL && localStream && currentCall && userProfile && !('members' in currentCall.target)) {
+            const pc = createPeerConnection();
+            const startCall = async () => {
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                
+                socketRef.current?.emit('outgoing-call', { 
+                    fromId: userProfile.id, 
+                    toId: currentCall.target.id, 
+                    offer,
+                    callType: currentCall.type
+                });
+            }
+            startCall();
+        }
+    }, [appState, localStream, currentCall, userProfile, createPeerConnection]);
     
     const handleAcceptCall = useCallback(async () => {
         if (!currentCall || !peerConnectionRef.current || !userProfile || !peerSocketId) return;
@@ -238,7 +245,7 @@ const App: React.FC = () => {
         playSound('incoming', from);
         
         try {
-            const stream = await setupMedia(callType);
+            await setupMedia(callType);
             const pc = createPeerConnection();
             
             await pc.setRemoteDescription(new RTCSessionDescription(offer));
@@ -332,7 +339,7 @@ const App: React.FC = () => {
             if (sender) {
                 await sender.replaceTrack(newVideoTrack);
                 cameraVideoTrackRef.current = newVideoTrack;
-                setLocalStream(newStream); // Update the local stream to the new one
+                setLocalStream(newStream);
             }
         } catch (error) { console.error("Failed to switch camera", error); }
     }, [localStream, setupMedia]);
@@ -343,12 +350,11 @@ const App: React.FC = () => {
         if (sender) {
              try {
                 await sender.replaceTrack(cameraVideoTrackRef.current);
-                // The original stream was stopped, so we need a new one
                 const newCameraStream = await setupMedia(CallType.VIDEO);
                 setLocalStream(newCameraStream);
                 setIsScreenSharing(false);
             } catch (error) {
-                console.error("Failed to re-acquire camera for stopping screen share:", error);
+                console.error("Failed to stop screen share:", error);
             }
         }
     }, [setupMedia]);
@@ -359,7 +365,6 @@ const App: React.FC = () => {
             const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
             const screenTrack = screenStream.getVideoTracks()[0];
             
-            // Save current camera track if we don't have it saved yet
             if (!cameraVideoTrackRef.current) {
                 cameraVideoTrackRef.current = localStream?.getVideoTracks()[0] || null;
             }
@@ -367,7 +372,8 @@ const App: React.FC = () => {
             const sender = peerConnectionRef.current.getSenders().find(s => s.track?.kind === 'video');
             if (sender) {
                 await sender.replaceTrack(screenTrack);
-                setLocalStream(screenStream); // Temporarily use screen stream as local stream
+                localStream?.getTracks().forEach(track => track.stop());
+                setLocalStream(screenStream);
                 setIsScreenSharing(true);
                 
                 screenTrack.onended = () => { 
