@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { AppState, CallType, CallStatus, ContactStatus } from './types';
 import type { Contact, Call, CallLog, UserProfile, NotificationSettings, Group, AuthData } from './types';
@@ -23,7 +24,6 @@ const STUN_SERVERS = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
     ],
 };
 
@@ -149,9 +149,8 @@ const App: React.FC = () => {
                 remoteStreamRef.current = new MediaStream();
                 setRemoteStreams([remoteStreamRef.current]);
             }
-            event.streams[0].getTracks().forEach(track => {
-                remoteStreamRef.current?.addTrack(track);
-            });
+            // FIX: MediaStream.addTrack only takes 1 argument. The second argument was removed.
+            remoteStreamRef.current.addTrack(event.track);
         };
         
         localStream?.getTracks().forEach(track => {
@@ -339,16 +338,22 @@ const App: React.FC = () => {
             const newStream = await setupMedia(CallType.VIDEO, facingMode);
             const newVideoTrack = newStream.getVideoTracks()[0];
             const sender = peerConnectionRef.current.getSenders().find(s => s.track?.kind === 'video');
-            if (sender) {
+            if (sender && newVideoTrack) {
                 await sender.replaceTrack(newVideoTrack);
                 cameraVideoTrackRef.current = newVideoTrack;
-                setLocalStream(newStream);
+                // Keep the old audio track but replace the video track
+                const oldAudioTrack = localStream.getAudioTracks()[0];
+                const finalStream = new MediaStream([oldAudioTrack, newVideoTrack]);
+                setLocalStream(finalStream);
             }
         } catch (error) { console.error("Failed to switch camera", error); }
     }, [localStream, setupMedia]);
 
     const stopScreenShare = useCallback(async () => {
-        if (!peerConnectionRef.current || !cameraVideoTrackRef.current) return;
+        if (!peerConnectionRef.current || !cameraVideoTrackRef.current) {
+            console.log("Cannot stop screen share: no peer connection or camera track.");
+            return;
+        }
         const sender = peerConnectionRef.current.getSenders().find(s => s.track?.kind === 'video');
         if (sender) {
              try {
@@ -365,7 +370,7 @@ const App: React.FC = () => {
     const startScreenShare = useCallback(async () => {
         if (!peerConnectionRef.current) return;
         try {
-            const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+            const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
             const screenTrack = screenStream.getVideoTracks()[0];
             
             if (!cameraVideoTrackRef.current && localStream) {
@@ -375,19 +380,21 @@ const App: React.FC = () => {
             const sender = peerConnectionRef.current.getSenders().find(s => s.track?.kind === 'video');
             if (sender) {
                 await sender.replaceTrack(screenTrack);
-                localStream?.getTracks().forEach(track => track.stop());
                 setLocalStream(screenStream);
                 setIsScreenSharing(true);
                 
                 screenTrack.onended = () => { 
-                    if (isScreenSharing) stopScreenShare(); 
+                    // This check is important to avoid calling stopScreenShare if it's already being handled.
+                    if (peerConnectionRef.current?.getSenders().find(s => s.track === screenTrack)) {
+                       stopScreenShare();
+                    }
                 };
             }
         } catch (error) { 
             console.error("Screen sharing failed:", error);
             setIsScreenSharing(false); 
         }
-    }, [localStream, stopScreenShare, isScreenSharing]);
+    }, [localStream, stopScreenShare]);
 
 
     const handleToggleScreenShare = useCallback(() => { 
