@@ -5,20 +5,6 @@ import { Avatar } from './Avatar';
 import { IconButton } from './IconButton';
 import { EndCallIcon, MuteIcon, UnmuteIcon, VideoIcon, VideoOffIcon, PhoneIcon, SwapIcon, SwitchCameraIcon, ScreenShareIcon } from './icons';
 
-interface CallViewProps {
-  appState: AppState;
-  call: Call | null;
-  onEndCall: () => void;
-  onAcceptCall: () => void;
-  onSwitchCamera: (facingMode: 'user' | 'environment') => void;
-  localStream: MediaStream | null;
-  remoteStreams: MediaStream[] | null;
-  isScreenSharing: boolean;
-  onToggleScreenShare: () => void;
-  isVideoEnabled: boolean;
-  onToggleVideo: () => void;
-}
-
 const MUTE_SOUND_URL = 'https://storage.googleapis.com/messenger-sounds/click-off.mp3';
 const UNMUTE_SOUND_URL = 'https://storage.googleapis.com/messenger-sounds/click-on.mp3';
 
@@ -39,6 +25,21 @@ const VideoPlayer: React.FC<{ stream: MediaStream | null, isMuted: boolean, isMi
     }, [stream]);
     return <video ref={videoRef} autoPlay playsInline muted={isMuted} className={`w-full h-full ${isMirrored ? 'transform -scale-x-100' : ''}`} style={{ objectFit }}></video>;
 };
+
+// FIX: Define CallViewProps interface to fix missing type error.
+interface CallViewProps {
+  appState: AppState;
+  call: Call | null;
+  onEndCall: () => void;
+  onAcceptCall: () => void;
+  onSwitchCamera: (facingMode: 'user' | 'environment') => void;
+  localStream: MediaStream | null;
+  remoteStreams: MediaStream[];
+  isScreenSharing: boolean;
+  onToggleScreenShare: () => void;
+  isVideoEnabled: boolean;
+  onToggleVideo: () => void;
+}
 
 export const CallView: React.FC<CallViewProps> = ({
   appState,

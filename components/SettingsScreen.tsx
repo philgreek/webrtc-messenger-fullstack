@@ -13,9 +13,9 @@ interface SettingsScreenProps {
 }
 
 const SOUND_OPTIONS = [
-    { name: 'Classic Phone', url: 'https://cdn.pixabay.com/audio/2022/03/15/audio_70bce3265a.mp3' },
-    { name: 'Digital Ringtone', url: 'https://cdn.pixabay.com/audio/2022/05/27/audio_132d7321b3.mp3' },
-    { name: 'Marimba', url: 'https://cdn.pixabay.com/audio/2021/08/04/audio_bb630cc098.mp3' },
+    { name: 'Digital', url: 'https://storage.googleapis.com/messenger-sounds/digital-ringtone.mp3' },
+    { name: 'Classic', url: 'https://storage.googleapis.com/messenger-sounds/classic-ringtone.mp3' },
+    { name: 'Marimba', url: 'https://storage.googleapis.com/messenger-sounds/marimba-ringtone.mp3' },
 ];
 
 const ToggleSwitch: React.FC<{ checked: boolean; onChange: (checked: boolean) => void }> = ({ checked, onChange }) => (
