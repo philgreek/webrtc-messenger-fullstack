@@ -48,9 +48,6 @@ const App: React.FC = () => {
     const socketRef = useRef<any | null>(null);
     const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
     const cameraVideoTrackRef = useRef<MediaStreamTrack | null>(null);
-    
-    const remoteStreamRef = useRef<MediaStream | null>(null);
-
 
     const handleSuccessfulAuth = useCallback((data: AuthData) => {
         setToken(data.token);
@@ -93,19 +90,21 @@ const App: React.FC = () => {
     }, [notificationSettings]);
 
     const cleanupCall = useCallback(() => {
+        console.log("Cleaning up call resources...");
         localStream?.getTracks().forEach(track => track.stop());
-        peerConnectionRef.current?.close();
+        if (peerConnectionRef.current) {
+            peerConnectionRef.current.close();
+            peerConnectionRef.current = null;
+        }
         
         setLocalStream(null);
         setRemoteStreams([]);
-        remoteStreamRef.current = null;
         setCurrentCall(null);
         setAppState(AppState.CONTACTS);
         playSound('none');
         setIsScreenSharing(false);
         setIsVideoEnabled(false);
         cameraVideoTrackRef.current = null;
-        peerConnectionRef.current = null;
         setPeerSocketId(null);
     }, [localStream, playSound]);
     
@@ -121,6 +120,7 @@ const App: React.FC = () => {
 
     const handleEndCall = useCallback((shouldEmit = true) => {
         if (shouldEmit && socketRef.current && peerSocketId) {
+            console.log(`[emit end-call] to ${peerSocketId}`);
             socketRef.current.emit('end-call', { toSocketId: peerSocketId });
         }
         if (currentCall) {
@@ -134,29 +134,37 @@ const App: React.FC = () => {
     
     const createPeerConnection = useCallback(() => {
         if (peerConnectionRef.current) {
+            console.warn("Peer connection already exists. Closing old one.");
             peerConnectionRef.current.close();
         }
+        
+        console.log("Creating new PeerConnection");
         const pc = new RTCPeerConnection(STUN_SERVERS);
     
         pc.onicecandidate = (event) => {
             if (event.candidate && socketRef.current && peerSocketId) {
+                // console.log(`[emit ice-candidate] to ${peerSocketId}`);
                 socketRef.current.emit('ice-candidate', { toSocketId: peerSocketId, candidate: event.candidate });
             }
         };
     
         pc.ontrack = (event) => {
-            if (!remoteStreamRef.current) {
-                remoteStreamRef.current = new MediaStream();
-                setRemoteStreams([remoteStreamRef.current]);
+            console.log("[ontrack] Received remote track:", event.track.kind);
+            const remoteStream = event.streams[0];
+            if (remoteStream) {
+                console.log("[ontrack] Attaching remote stream:", remoteStream.id);
+                setRemoteStreams(prevStreams => {
+                    if (prevStreams.some(s => s.id === remoteStream.id)) {
+                        return prevStreams;
+                    }
+                    return [...prevStreams, remoteStream];
+                });
             }
-            // FIX: MediaStream.addTrack only takes 1 argument. The second argument was removed.
-            remoteStreamRef.current.addTrack(event.track);
         };
         
         localStream?.getTracks().forEach(track => {
-            if (localStream) {
-                pc.addTrack(track, localStream);
-            }
+            console.log("Adding local track to PC:", track.kind);
+            pc.addTrack(track, localStream);
         });
     
         peerConnectionRef.current = pc;
@@ -164,9 +172,9 @@ const App: React.FC = () => {
     }, [localStream, peerSocketId]);
     
     const setupMedia = useCallback(async (type: CallType, facingMode: 'user' | 'environment' = 'user') => {
-        if (localStream) {
-            localStream.getTracks().forEach(track => track.stop());
-        }
+        console.log(`Setting up media: type=${type}, facingMode=${facingMode}`);
+        localStream?.getTracks().forEach(track => track.stop());
+        
         const constraints = { 
             audio: true, 
             video: type === CallType.VIDEO ? { width: 1280, height: 720, facingMode } : false 
@@ -187,6 +195,7 @@ const App: React.FC = () => {
             alert("Group calls are not supported in this version.");
             return;
         }
+        console.log(`Starting call to ${target.name}`);
         const call: Call = { target, type, direction: 'outgoing' };
         setCurrentCall(call);
         setAppState(AppState.OUTGOING_CALL);
@@ -203,11 +212,13 @@ const App: React.FC = () => {
 
     useEffect(() => {
         if (appState === AppState.OUTGOING_CALL && localStream && currentCall && userProfile && !('members' in currentCall.target)) {
+            console.log("Outgoing call state detected, creating peer connection and offer");
             const pc = createPeerConnection();
             const startCall = async () => {
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
                 
+                console.log(`[emit outgoing-call] to user ${currentCall.target.id}`);
                 socketRef.current?.emit('outgoing-call', { 
                     fromId: userProfile.id, 
                     toId: currentCall.target.id, 
@@ -221,10 +232,12 @@ const App: React.FC = () => {
     
     const handleAcceptCall = useCallback(async () => {
         if (!currentCall || !peerConnectionRef.current || !userProfile || !peerSocketId) return;
+        console.log("Accepting call");
         playSound('none');
         try {
             const answer = await peerConnectionRef.current.createAnswer();
             await peerConnectionRef.current.setLocalDescription(answer);
+            console.log(`[emit call-accepted] to ${peerSocketId}`);
             socketRef.current?.emit('call-accepted', { 
                 fromId: userProfile.id,
                 toSocketId: peerSocketId, 
@@ -238,7 +251,11 @@ const App: React.FC = () => {
     }, [currentCall, userProfile, peerSocketId, playSound, handleEndCall]);
 
     const handleIncomingCall = useCallback(async ({ from, offer, callType, fromSocketId }: { from: Contact, offer: RTCSessionDescriptionInit, callType: CallType, fromSocketId: string }) => {
-        if (currentCall) return; // Already in a call
+        if (currentCall) {
+            console.log("Ignoring incoming call, already in a call.");
+            return;
+        }
+        console.log(`Incoming call from ${from.name} (socket: ${fromSocketId})`);
         
         const call: Call = { target: from, type: callType, direction: 'incoming' };
         setCurrentCall(call);
@@ -249,7 +266,6 @@ const App: React.FC = () => {
         try {
             await setupMedia(callType);
             const pc = createPeerConnection();
-            
             await pc.setRemoteDescription(new RTCSessionDescription(offer));
         } catch (error) {
             console.error('Failed to handle incoming call:', error);
@@ -258,6 +274,7 @@ const App: React.FC = () => {
     }, [currentCall, createPeerConnection, playSound, cleanupCall, setupMedia]);
 
     const handleCallAnswered = useCallback(async ({ answer, fromSocketId }: { answer: RTCSessionDescriptionInit, fromSocketId: string }) => {
+        console.log(`Call answered by socket ${fromSocketId}`);
         playSound('none');
         if (peerConnectionRef.current) {
             setPeerSocketId(fromSocketId);
@@ -268,8 +285,11 @@ const App: React.FC = () => {
 
     const handleNewICECandidate = useCallback(async ({ candidate }: { candidate: RTCIceCandidateInit }) => {
         if (peerConnectionRef.current && candidate) {
-            try { await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate)); }
-            catch (error) { console.error("Error adding received ICE candidate", error); }
+            try { 
+                await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate)); 
+            } catch (error) { 
+                console.error("Error adding received ICE candidate", error); 
+            }
         }
     }, []);
 
@@ -318,7 +338,7 @@ const App: React.FC = () => {
             
             if (socketRef.current) socketRef.current.disconnect();
 
-            const socket = io(BACKEND_URL);
+            const socket = io(BACKEND_URL, { transports: ['websocket'] });
             socketRef.current = socket;
             socket.on('connect', () => socket.emit('register', userProfile.id));
             socket.on('incoming-call', handleIncomingCall);
@@ -341,54 +361,47 @@ const App: React.FC = () => {
             if (sender && newVideoTrack) {
                 await sender.replaceTrack(newVideoTrack);
                 cameraVideoTrackRef.current = newVideoTrack;
-                // Keep the old audio track but replace the video track
-                const oldAudioTrack = localStream.getAudioTracks()[0];
-                const finalStream = new MediaStream([oldAudioTrack, newVideoTrack]);
-                setLocalStream(finalStream);
+                setLocalStream(newStream);
             }
-        } catch (error) { console.error("Failed to switch camera", error); }
+        } catch (error) { 
+            console.error("Failed to switch camera", error);
+            alert("Could not switch camera.");
+        }
     }, [localStream, setupMedia]);
-
+    
     const stopScreenShare = useCallback(async () => {
-        if (!peerConnectionRef.current || !cameraVideoTrackRef.current) {
-            console.log("Cannot stop screen share: no peer connection or camera track.");
-            return;
-        }
+        if (!peerConnectionRef.current || !cameraVideoTrackRef.current) return;
         const sender = peerConnectionRef.current.getSenders().find(s => s.track?.kind === 'video');
-        if (sender) {
-             try {
-                await sender.replaceTrack(cameraVideoTrackRef.current);
-                const newCameraStream = await setupMedia(CallType.VIDEO);
-                setLocalStream(newCameraStream);
-                setIsScreenSharing(false);
-            } catch (error) {
-                console.error("Failed to stop screen share:", error);
-            }
-        }
-    }, [setupMedia]);
+        if (!sender) return;
+        try {
+            localStream?.getTracks().forEach(track => track.stop());
+            await sender.replaceTrack(cameraVideoTrackRef.current);
+            const newStream = new MediaStream();
+            if (localStream?.getAudioTracks()[0]) newStream.addTrack(localStream.getAudioTracks()[0]);
+            newStream.addTrack(cameraVideoTrackRef.current);
+            setLocalStream(newStream);
+            setIsScreenSharing(false);
+        } catch (error) { console.error("Failed to stop screen share:", error); }
+    }, [localStream]);
     
     const startScreenShare = useCallback(async () => {
         if (!peerConnectionRef.current) return;
         try {
-            const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+            const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
             const screenTrack = screenStream.getVideoTracks()[0];
             
             if (!cameraVideoTrackRef.current && localStream) {
                 cameraVideoTrackRef.current = localStream.getVideoTracks()[0] || null;
             }
-            
             const sender = peerConnectionRef.current.getSenders().find(s => s.track?.kind === 'video');
             if (sender) {
                 await sender.replaceTrack(screenTrack);
-                setLocalStream(screenStream);
+                const newStream = new MediaStream();
+                if (localStream?.getAudioTracks()[0]) newStream.addTrack(localStream.getAudioTracks()[0]);
+                newStream.addTrack(screenTrack);
+                setLocalStream(newStream);
                 setIsScreenSharing(true);
-                
-                screenTrack.onended = () => { 
-                    // This check is important to avoid calling stopScreenShare if it's already being handled.
-                    if (peerConnectionRef.current?.getSenders().find(s => s.track === screenTrack)) {
-                       stopScreenShare();
-                    }
-                };
+                screenTrack.onended = stopScreenShare;
             }
         } catch (error) { 
             console.error("Screen sharing failed:", error);
@@ -396,13 +409,8 @@ const App: React.FC = () => {
         }
     }, [localStream, stopScreenShare]);
 
-
     const handleToggleScreenShare = useCallback(() => { 
-        if (isScreenSharing) {
-            stopScreenShare();
-        } else {
-            startScreenShare();
-        }
+        if (isScreenSharing) stopScreenShare(); else startScreenShare();
     }, [isScreenSharing, startScreenShare, stopScreenShare]);
 
     const handleToggleVideo = useCallback(() => {
