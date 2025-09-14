@@ -1,270 +1,274 @@
-(индекс):64 cdn.tailwindcss.com should not be used in production. To use Tailwind CSS in production, install it as a PostCSS plugin or use the Tailwind CLI: https://tailwindcss.com/docs/installation
-(анонимная) @ (индекс):64
-(анонимная) @ (индекс):64
-index-UZpKGSbg.js:25 [Violation] 'message' handler took 253ms
-(индекс):1 [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) <input id=​"password" class=​"w-full bg-gray-700 border border-gray-600 rounded-lg py-3 px-4 text-white placeholder-gray-400 focus:​outline-none focus:​ring-2 focus:​ring-blue-500" placeholder=​"Enter your password" required type=​"password" value>​
-(индекс):1 Uncaught (in promise) Error: Could not establish connection. Receiving end does not exist.
-(индекс):1 Uncaught (in promise) Error: Could not establish connection. Receiving end does not exist.
-index-UZpKGSbg.js:49  GET https://webrtc-messenger-fullstack-server.onrender.com/api/data 404 (Not Found)
-z @ index-UZpKGSbg.js:49
-(анонимная) @ index-UZpKGSbg.js:49
-ou @ index-UZpKGSbg.js:48
-so @ index-UZpKGSbg.js:48
-qt @ index-UZpKGSbg.js:48
-so @ index-UZpKGSbg.js:48
-qt @ index-UZpKGSbg.js:48
-so @ index-UZpKGSbg.js:48
-_o @ index-UZpKGSbg.js:48
-(анонимная) @ index-UZpKGSbg.js:48
-it @ index-UZpKGSbg.js:25
-index-UZpKGSbg.js:49  POST https://webrtc-messenger-fullstack-server.onrender.com/api/login 401 (Unauthorized)
-w @ index-UZpKGSbg.js:49
-Go @ index-UZpKGSbg.js:48
-(анонимная) @ index-UZpKGSbg.js:48
-Zf @ index-UZpKGSbg.js:48
-$i @ index-UZpKGSbg.js:48
-sf @ index-UZpKGSbg.js:49
-Yh @ index-UZpKGSbg.js:49
-index-UZpKGSbg.js:49  POST https://webrtc-messenger-fullstack-server.onrender.com/api/contacts/add 404 (Not Found)
-xt @ index-UZpKGSbg.js:49
-onAddContact @ index-UZpKGSbg.js:49
-B @ index-UZpKGSbg.js:49
-Go @ index-UZpKGSbg.js:48
-(анонимная) @ index-UZpKGSbg.js:48
-Zf @ index-UZpKGSbg.js:48
-$i @ index-UZpKGSbg.js:48
-sf @ index-UZpKGSbg.js:49
-Yh @ index-UZpKGSbg.js:49
-audio_107945d898.mp3:1  GET https://cdn.pixabay.com/audio/2022/08/22/audio_107945d898.mp3 403 (Forbidden)
-index-UZpKGSbg.js:49 Audio playback failed: NotSupportedError: Failed to load because no supported source was found.
-(анонимная) @ index-UZpKGSbg.js:49
-Promise.catch
-(анонимная) @ index-UZpKGSbg.js:49
-(анонимная) @ index-UZpKGSbg.js:49
-onClick @ index-UZpKGSbg.js:49
-Go @ index-UZpKGSbg.js:48
-(анонимная) @ index-UZpKGSbg.js:48
-Zf @ index-UZpKGSbg.js:48
-$i @ index-UZpKGSbg.js:48
-sf @ index-UZpKGSbg.js:49
-Yh @ index-UZpKGSbg.js:49
-cdn.pixabay.com/audio/2022/05/27/audio_132d7321b3.mp3:1  GET https://cdn.pixabay.com/audio/2022/05/27/audio_132d7321b3.mp3 net::ERR_ABORTED 403 (Forbidden)
-index-UZpKGSbg.js:49 Audio playback failed: NotSupportedError: Failed to load because no supported source was found.
-(анонимная) @ index-UZpKGSbg.js:49
-Promise.catch
-(анонимная) @ index-UZpKGSbg.js:49
-(анонимная) @ index-UZpKGSbg.js:49
-U.emit @ index.mjs:136
-value @ socket.js:538
-value @ socket.js:525
-value @ socket.js:495
-U.emit @ index.mjs:136
-(анонимная) @ manager.js:204
-Promise.then
-ce @ websocket-constructor.browser.js:5
-value @ manager.js:203
-U.emit @ index.mjs:136
-value @ index.js:146
-value @ manager.js:190
-U.emit @ index.mjs:136
-value @ socket.js:341
-U.emit @ index.mjs:136
-value @ transport.js:98
-value @ transport.js:90
-ws.onmessage @ websocket.js:68
-favicon.ico:1  GET https://connectsphere-messenger.vercel.app/favicon.ico 404 (Not Found)
-manager.js:257 WebSocket connection to 'wss://webrtc-messenger-fullstack-server.onrender.com/socket.io/?EIO=4&transport=websocket&sid=BYr6Gpyznh6C22UpAAAe' failed: WebSocket is closed before the connection is established.
-value @ websocket.js:121
-value @ transport.js:54
-o @ socket.js:242
-s @ socket.js:250
-u @ socket.js:258
-n @ index.mjs:56
-U.emit @ index.mjs:136
-value @ socket.js:570
-t @ socket.js:500
-(анонимная) @ socket.js:521
-n @ index.mjs:56
-U.emit @ index.mjs:136
-value @ socket.js:395
-U.emit @ index.mjs:136
-(анонимная) @ polling.js:161
-U.emit @ index.mjs:136
-value @ polling.js:353
-r.onreadystatechange @ polling.js:288
-XMLHttpRequest.send
-value @ polling.js:298
-i @ polling.js:237
-value @ polling.js:190
-value @ polling.js:200
-(анонимная) @ polling.js:159
-(анонимная) @ index.js:15
-E @ encodePacket.browser.js:31
-(анонимная) @ index.js:12
-t.doWrite.t.writable @ index.js:10
-value @ polling.js:158
-value @ transport.js:66
-value @ socket.js:412
-value @ socket.js:493
-value @ socket.js:454
-value @ manager.js:257
-value @ socket.js:400
-value @ socket.js:424
-value @ socket.js:414
-U.emit @ index.mjs:136
-value @ manager.js:170
-(анонимная) @ manager.js:115
-U.emit @ index.mjs:136
-value @ socket.js:300
-value @ socket.js:363
-value @ socket.js:327
-U.emit @ index.mjs:136
-value @ transport.js:98
-(анонимная) @ polling.js:116
-value @ polling.js:119
-U.emit @ index.mjs:136
-value @ polling.js:352
-r.onreadystatechange @ polling.js:288
-XMLHttpRequest.send
-value @ polling.js:298
-i @ polling.js:237
-value @ polling.js:190
-value @ polling.js:215
-value @ polling.js:96
-value @ polling.js:56
-value @ transport.js:46
-value @ socket.js:170
-a @ socket.js:111
-value @ manager.js:108
-s @ manager.js:39
-Ve @ index.js:25
-(анонимная) @ index-UZpKGSbg.js:49
-ou @ index-UZpKGSbg.js:48
-so @ index-UZpKGSbg.js:48
-qt @ index-UZpKGSbg.js:48
-so @ index-UZpKGSbg.js:48
-qt @ index-UZpKGSbg.js:48
-so @ index-UZpKGSbg.js:48
-_o @ index-UZpKGSbg.js:48
-(анонимная) @ index-UZpKGSbg.js:48
-it @ index-UZpKGSbg.js:25
-(индекс):1 Uncaught (in promise) Error: Could not establish connection. Receiving end does not exist.
-manager.js:257 WebSocket connection to 'wss://webrtc-messenger-fullstack-server.onrender.com/socket.io/?EIO=4&transport=websocket&sid=iS4uxYi85z1NelYnAAAm' failed: WebSocket is closed before the connection is established.
-value @ websocket.js:121
-value @ transport.js:54
-o @ socket.js:242
-s @ socket.js:250
-u @ socket.js:258
-n @ index.mjs:56
-U.emit @ index.mjs:136
-value @ socket.js:570
-t @ socket.js:500
-(анонимная) @ socket.js:521
-n @ index.mjs:56
-U.emit @ index.mjs:136
-value @ socket.js:395
-U.emit @ index.mjs:136
-(анонимная) @ polling.js:161
-U.emit @ index.mjs:136
-value @ polling.js:353
-r.onreadystatechange @ polling.js:288
-XMLHttpRequest.send
-value @ polling.js:298
-i @ polling.js:237
-value @ polling.js:190
-value @ polling.js:200
-(анонимная) @ polling.js:159
-(анонимная) @ index.js:15
-E @ encodePacket.browser.js:31
-(анонимная) @ index.js:12
-t.doWrite.t.writable @ index.js:10
-value @ polling.js:158
-value @ transport.js:66
-value @ socket.js:412
-value @ socket.js:493
-value @ socket.js:454
-value @ manager.js:257
-value @ socket.js:400
-value @ socket.js:424
-value @ socket.js:414
-U.emit @ index.mjs:136
-value @ manager.js:170
-(анонимная) @ manager.js:115
-U.emit @ index.mjs:136
-value @ socket.js:300
-value @ socket.js:363
-value @ socket.js:327
-U.emit @ index.mjs:136
-value @ transport.js:98
-(анонимная) @ polling.js:116
-value @ polling.js:119
-U.emit @ index.mjs:136
-value @ polling.js:352
-r.onreadystatechange @ polling.js:288
-XMLHttpRequest.send
-value @ polling.js:298
-i @ polling.js:237
-value @ polling.js:190
-value @ polling.js:215
-value @ polling.js:96
-value @ polling.js:56
-value @ transport.js:46
-value @ socket.js:170
-a @ socket.js:111
-value @ manager.js:108
-s @ manager.js:39
-Ve @ index.js:25
-(анонимная) @ index-UZpKGSbg.js:49
-ou @ index-UZpKGSbg.js:48
-so @ index-UZpKGSbg.js:48
-qt @ index-UZpKGSbg.js:48
-so @ index-UZpKGSbg.js:48
-qt @ index-UZpKGSbg.js:48
-so @ index-UZpKGSbg.js:48
-_o @ index-UZpKGSbg.js:48
-Cn @ index-UZpKGSbg.js:48
-jo @ index-UZpKGSbg.js:48
-Ao @ index-UZpKGSbg.js:48
-bo @ index-UZpKGSbg.js:48
-yo @ index-UZpKGSbg.js:48
-wo @ index-UZpKGSbg.js:48
-bu @ index-UZpKGSbg.js:48
-Uo @ index-UZpKGSbg.js:48
-(анонимная) @ index-UZpKGSbg.js:48
-audio_107945d898.mp3:1  GET https://cdn.pixabay.com/audio/2022/08/22/audio_107945d898.mp3 403 (Forbidden)
-index-UZpKGSbg.js:49 Audio playback failed: NotSupportedError: Failed to load because no supported source was found.
-(анонимная) @ index-UZpKGSbg.js:49
-Promise.catch
-(анонимная) @ index-UZpKGSbg.js:49
-(анонимная) @ index-UZpKGSbg.js:49
-onClick @ index-UZpKGSbg.js:49
-Go @ index-UZpKGSbg.js:48
-(анонимная) @ index-UZpKGSbg.js:48
-Zf @ index-UZpKGSbg.js:48
-$i @ index-UZpKGSbg.js:48
-sf @ index-UZpKGSbg.js:49
-Yh @ index-UZpKGSbg.js:49
-audio_52c4226f33.mp3:1  GET https://cdn.pixabay.com/audio/2021/08/04/audio_52c4226f33.mp3 403 (Forbidden)
-index-UZpKGSbg.js:49 Audio effect failed: NotSupportedError: Failed to load because no supported source was found.
-(анонимная) @ index-UZpKGSbg.js:49
-Promise.catch
-(анонимная) @ index-UZpKGSbg.js:49
-(анонимная) @ index-UZpKGSbg.js:49
-Go @ index-UZpKGSbg.js:48
-(анонимная) @ index-UZpKGSbg.js:48
-Zf @ index-UZpKGSbg.js:48
-$i @ index-UZpKGSbg.js:48
-sf @ index-UZpKGSbg.js:49
-Yh @ index-UZpKGSbg.js:49
-audio_c848a6323c.mp3:1  GET https://cdn.pixabay.com/audio/2022/03/10/audio_c848a6323c.mp3 403 (Forbidden)
-index-UZpKGSbg.js:49 Audio effect failed: NotSupportedError: Failed to load because no supported source was found.
-(анонимная) @ index-UZpKGSbg.js:49
-Promise.catch
-(анонимная) @ index-UZpKGSbg.js:49
-(анонимная) @ index-UZpKGSbg.js:49
-Go @ index-UZpKGSbg.js:48
-(анонимная) @ index-UZpKGSbg.js:48
-Zf @ index-UZpKGSbg.js:48
-$i @ index-UZpKGSbg.js:48
-sf @ index-UZpKGSbg.js:49
-Yh @ index-UZpKGSbg.js:49
+const express = require('express');
+const http = require('http');
+const { Server } = require("socket.io");
+const cors = require('cors');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+
+const app = express();
+
+const allowedOrigins = [
+    'https://connectsphere-messenger.vercel.app', 
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:5173'
+];
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  }
+};
+
+app.use(cors(corsOptions));
+app.use(express.json({ limit: '5mb' }));
+
+const server = http.createServer(app);
+
+const io = new Server(server, {
+  cors: {
+    origin: allowedOrigins,
+    methods: ["GET", "POST"]
+  },
+  pingInterval: 25000,
+  pingTimeout: 20000,
+});
+
+const PORT = process.env.PORT || 3001;
+const JWT_SECRET = 'your-super-secret-key-that-is-long-and-secure';
+
+// --- In-Memory Database ---
+const users = {};
+let nextUserId = 0;
+
+const createInitialUser = (name, password) => {
+    const id = nextUserId++;
+    const salt = bcrypt.genSaltSync(10);
+    const hashedPassword = bcrypt.hashSync(password, salt);
+    users[id] = {
+        id, name, password: hashedPassword,
+        avatarUrl: `https://picsum.photos/seed/${name.toLowerCase()}/200`,
+        status: 'OFFLINE', contacts: [], groups: []
+    };
+    return users[id];
+};
+
+const alice = createInitialUser('Alice', 'password123');
+const bob = createInitialUser('Bob', 'password123');
+alice.contacts.push({ id: bob.id });
+bob.contacts.push({ id: alice.id });
+
+const userSockets = new Map(); // { userId => Set(socketId1, socketId2, ...) }
+const activeCalls = new Map(); // { socketId1 => socketId2, socketId2 => socketId1 }
+
+
+// --- API Routes ---
+
+app.post('/api/register', (req, res) => {
+    const { name, password } = req.body;
+    if (!name || !password) return res.status(400).json({ message: 'Name and password are required' });
+    if (Object.values(users).find(u => u.name === name)) return res.status(400).json({ message: 'User already exists' });
+    createInitialUser(name, password);
+    res.status(201).json({ message: 'User created successfully' });
+});
+
+app.post('/api/login', (req, res) => {
+    const { name, password } = req.body;
+    const user = Object.values(users).find(u => u.name === name);
+    if (!user || !bcrypt.compareSync(password, user.password)) return res.status(401).json({ message: 'Invalid credentials' });
+
+    const token = jwt.sign({ id: user.id, name: user.name }, JWT_SECRET, { expiresIn: '1d' });
+    
+    const userProfile = { id: user.id, name: user.name, avatarUrl: user.avatarUrl };
+    const contacts = user.contacts.map(c => {
+        const contactUser = users[c.id];
+        const isOnline = userSockets.has(contactUser.id) && userSockets.get(contactUser.id).size > 0;
+        return { id: contactUser.id, name: contactUser.name, avatarUrl: contactUser.avatarUrl, status: isOnline ? 'ONLINE' : 'OFFLINE' };
+    });
+
+    res.json({ token, user: userProfile, contacts, groups: user.groups });
+});
+
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (token == null) return res.sendStatus(401);
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) return res.sendStatus(403);
+        req.user = user;
+        next();
+    });
+};
+
+app.get('/api/data', authenticateToken, (req, res) => {
+    const user = users[req.user.id];
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    const userProfile = { id: user.id, name: user.name, avatarUrl: user.avatarUrl };
+    const contacts = user.contacts.map(c => {
+       const contactUser = users[c.id];
+       if (!contactUser) return null;
+       const isOnline = userSockets.has(contactUser.id) && userSockets.get(contactUser.id).size > 0;
+       return { id: contactUser.id, name: contactUser.name, avatarUrl: contactUser.avatarUrl, status: isOnline ? 'ONLINE' : 'OFFLINE' };
+    }).filter(Boolean);
+    
+    res.json({ user: userProfile, contacts, groups: user.groups });
+});
+
+app.post('/api/profile/update', authenticateToken, (req, res) => {
+    const { name, avatarUrl } = req.body;
+    const user = users[req.user.id];
+    if (!user) return res.status(404).json({ message: "User not found" });
+    if (name) user.name = name;
+    if (avatarUrl) user.avatarUrl = avatarUrl;
+    res.json({ message: 'Profile updated successfully', user: { id: user.id, name: user.name, avatarUrl: user.avatarUrl } });
+});
+
+app.post('/api/contacts/add', authenticateToken, (req, res) => {
+    const { name } = req.body;
+    const currentUser = users[req.user.id];
+    if (!name) return res.status(400).json({ message: "Contact name is required" });
+
+    const contactToAdd = Object.values(users).find(u => u.name.toLowerCase() === name.toLowerCase());
+
+    if (!contactToAdd) return res.status(404).json({ message: `User "${name}" not found` });
+    if (contactToAdd.id === currentUser.id) return res.status(400).json({ message: "You cannot add yourself as a contact" });
+    if (currentUser.contacts.some(c => c.id === contactToAdd.id)) return res.status(400).json({ message: "This user is already in your contacts" });
+
+    currentUser.contacts.push({ id: contactToAdd.id });
+    contactToAdd.contacts.push({ id: currentUser.id });
+    
+    const isOnline = userSockets.has(contactToAdd.id) && userSockets.get(contactToAdd.id).size > 0;
+    const newContactForCurrentUser = { id: contactToAdd.id, name: contactToAdd.name, avatarUrl: contactToAdd.avatarUrl, status: isOnline ? 'ONLINE' : 'OFFLINE' };
+    res.status(201).json(newContactForCurrentUser);
+});
+
+// --- Socket.IO Signaling with Multi-Device Support & Active Call Tracking ---
+
+const cleanupCallState = (socketId) => {
+    const peerSocketId = activeCalls.get(socketId);
+    if (peerSocketId) {
+        io.to(peerSocketId).emit('call-ended');
+        activeCalls.delete(peerSocketId);
+    }
+    activeCalls.delete(socketId);
+    console.log(`Cleaned up call state for socket ${socketId}`);
+};
+
+io.on('connection', (socket) => {
+  console.log('A user connected:', socket.id);
+
+  socket.on('register', (userId) => {
+    if (users[userId] === undefined) {
+      console.log(`Attempted to register non-existent user ID: ${userId}`);
+      return;
+    }
+    
+    socket.userId = userId;
+    if (!userSockets.has(userId)) {
+      userSockets.set(userId, new Set());
+    }
+    userSockets.get(userId).add(socket.id);
+    
+    users[userId].contacts.forEach(contact => {
+        const contactSocketIds = userSockets.get(contact.id);
+        if (contactSocketIds) {
+            contactSocketIds.forEach(contactSocketId => {
+                io.to(contactSocketId).emit('status-update', { userId: userId, status: 'ONLINE' });
+            });
+        }
+    });
+
+    const initialStatuses = users[userId].contacts.map(contact => {
+        const isOnline = userSockets.has(contact.id) && userSockets.get(contact.id).size > 0;
+        return { userId: contact.id, status: isOnline ? 'ONLINE' : 'OFFLINE' };
+    });
+    socket.emit('initial-statuses', initialStatuses);
+
+    console.log(`User ${userId} (${users[userId].name}) registered. Sockets: ${[...userSockets.get(userId)]}`);
+  });
+
+  socket.on('outgoing-call', (data) => {
+    const { fromId, toId, offer, callType } = data;
+    const toSocketIds = userSockets.get(toId);
+    const fromUser = users[fromId];
+
+    if (toSocketIds && fromUser) {
+      console.log(`Call attempt from ${fromUser.name} to ${users[toId].name}. Sending to sockets: ${[...toSocketIds]}`);
+      const fromUserProfile = { id: fromUser.id, name: fromUser.name, avatarUrl: fromUser.avatarUrl, status: 'ONLINE' };
+      toSocketIds.forEach(socketId => {
+        io.to(socketId).emit('incoming-call', { 
+            from: fromUserProfile, 
+            offer, 
+            callType,
+            fromSocketId: socket.id
+        });
+      });
+    } else {
+      console.log(`Call failed: Could not find user or sockets. toId: ${toId}, fromId: ${fromId}`);
+    }
+  });
+
+  socket.on('call-accepted', (data) => {
+    const { fromId, toSocketId, answer } = data;
+     if (toSocketId) {
+        const fromUser = users[fromId];
+        console.log(`Call accepted by ${fromUser?.name}. Sending answer to original caller at socket ${toSocketId}`);
+        
+        activeCalls.set(socket.id, toSocketId);
+        activeCalls.set(toSocketId, socket.id);
+
+        io.to(toSocketId).emit('call-answered', { 
+            answer, 
+            fromSocketId: socket.id
+        });
+    }
+  });
+
+  socket.on('ice-candidate', (data) => {
+    const { toSocketId, candidate } = data;
+    if (toSocketId) {
+      io.to(toSocketId).emit('ice-candidate', { candidate, fromSocketId: socket.id });
+    }
+  });
+
+  socket.on('end-call', (data) => {
+    const { toSocketId } = data;
+    cleanupCallState(toSocketId);
+    cleanupCallState(socket.id);
+  });
+
+  socket.on('disconnect', () => {
+    console.log('User disconnected:', socket.id);
+    cleanupCallState(socket.id); // GUARANTEED CALL ENDING
+
+    const userId = socket.userId;
+    if (userId !== undefined && userSockets.has(userId)) {
+        const userSocketSet = userSockets.get(userId);
+        userSocketSet.delete(socket.id);
+
+        if (userSocketSet.size === 0) {
+            userSockets.delete(userId);
+            if(users[userId]) {
+                users[userId].contacts.forEach(contact => {
+                    const contactSocketIds = userSockets.get(contact.id);
+                    if (contactSocketIds) {
+                        contactSocketIds.forEach(contactSocketId => {
+                            io.to(contactSocketId).emit('status-update', { userId: userId, status: 'OFFLINE' });
+                        });
+                    }
+                });
+            }
+            console.log(`User ${userId} is now fully offline.`);
+        }
+    }
+  });
+});
+
+server.listen(PORT, () => {
+  console.log(`Server listening on port ${PORT}`);
+});
