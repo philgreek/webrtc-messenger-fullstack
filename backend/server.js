@@ -59,7 +59,10 @@ const createInitialUser = (name, password) => {
 
 const alice = createInitialUser('Alice', 'password123');
 const bob = createInitialUser('Bob', 'password123');
-const you = createInitialUser('You', 'password123'); // For initial testing
+const you = createInitialUser('You', 'password123');
+const tester = createInitialUser('TESTER', 'password123');
+const tester2 = createInitialUser('TESTER2', 'password123');
+
 
 // --- API Routes ---
 
@@ -149,12 +152,13 @@ const activeCalls = new Map(); // { socketId1 => socketId2, socketId2 => socketI
 
 
 const cleanupCallState = (socketId) => {
-    const peerSocketId = activeCalls.get(socketId);
-    if (peerSocketId) {
+    if (activeCalls.has(socketId)) {
+        const peerSocketId = activeCalls.get(socketId);
+        console.log(`Call ending. Notifying peer ${peerSocketId}`);
         io.to(peerSocketId).emit('call-ended');
-        activeCalls.delete(peerSocketId);
+        activeCalls.delete(peerSocketId); // Clean up for the peer
     }
-    activeCalls.delete(socketId);
+    activeCalls.delete(socketId); // Clean up for self
     console.log(`Cleaned up call state for socket ${socketId}`);
 };
 
@@ -171,20 +175,22 @@ io.on('connection', (socket) => {
     if (!userSockets.has(userId)) {
       userSockets.set(userId, new Set());
     }
+    const hadSocketsBefore = userSockets.get(userId).size > 0;
     userSockets.get(userId).add(socket.id);
     
-    users[userId].contacts.forEach(contact => {
-        const contactUser = users[contact.id];
-        if(!contactUser) return;
-        const contactSocketIds = userSockets.get(contact.id);
-        if (contactSocketIds) {
-            contactSocketIds.forEach(contactSocketId => {
-                io.to(contactSocketId).emit('status-update', { userId: userId, status: 'ONLINE' });
-            });
-        }
-    });
+    if (!hadSocketsBefore) { // Only notify if they were previously offline
+        users[userId].contacts.forEach(contact => {
+            const contactUser = users[contact.id];
+            if(!contactUser) return;
+            const contactSocketIds = userSockets.get(contact.id);
+            if (contactSocketIds) {
+                contactSocketIds.forEach(contactSocketId => {
+                    io.to(contactSocketId).emit('status-update', { userId: userId, status: 'ONLINE' });
+                });
+            }
+        });
+    }
 
-    // CRITICAL FIX: Send the current statuses of all contacts to the newly connected user
     const initialStatuses = users[userId].contacts.map(contact => {
         const contactUser = users[contact.id];
         if(!contactUser) return null;
@@ -248,7 +254,7 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
-    cleanupCallState(socket.id); // GUARANTEED CALL ENDING
+    cleanupCallState(socket.id);
 
     const userId = socket.userId;
     if (userId !== undefined && userSockets.has(userId)) {
@@ -269,7 +275,7 @@ io.on('connection', (socket) => {
                     }
                 });
             }
-            console.log(`User ${userId} is now fully offline.`);
+            console.log(`User ${userId} (${users[userId]?.name}) is now fully offline.`);
         }
     }
   });
