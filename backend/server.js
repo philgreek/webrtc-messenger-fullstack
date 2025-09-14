@@ -34,6 +34,7 @@ const io = new Server(server, {
     origin: allowedOrigins,
     methods: ["GET", "POST"]
   },
+  transports: ['websocket'], // Force WebSocket transport for reliability
   pingInterval: 25000,
   pingTimeout: 20000,
 });
@@ -152,22 +153,33 @@ const activeCalls = new Map(); // { socketId1 => socketId2, socketId2 => socketI
 
 
 const cleanupCallState = (socketId) => {
+    console.log(`[CLEANUP] Starting cleanup for socket: ${socketId}`);
     if (activeCalls.has(socketId)) {
         const peerSocketId = activeCalls.get(socketId);
-        console.log(`Call ending. Notifying peer ${peerSocketId}`);
+        console.log(`[CLEANUP] Socket ${socketId} was in a call with ${peerSocketId}. Notifying peer.`);
         io.to(peerSocketId).emit('call-ended');
-        activeCalls.delete(peerSocketId); // Clean up for the peer
+        
+        if(activeCalls.has(peerSocketId)){
+            activeCalls.delete(peerSocketId);
+            console.log(`[CLEANUP] Removed active call entry for peer: ${peerSocketId}`);
+        }
+    } else {
+        console.log(`[CLEANUP] Socket ${socketId} was not in an active call, no peer to notify.`);
     }
-    activeCalls.delete(socketId); // Clean up for self
-    console.log(`Cleaned up call state for socket ${socketId}`);
+    
+    if(activeCalls.has(socketId)){
+        activeCalls.delete(socketId);
+        console.log(`[CLEANUP] Removed active call entry for self: ${socketId}`);
+    }
+    console.log(`[CLEANUP] Finished cleanup for socket: ${socketId}`);
 };
 
 io.on('connection', (socket) => {
-  console.log('A user connected:', socket.id);
+  console.log('[CONNECTION] A user connected:', socket.id);
 
   socket.on('register', (userId) => {
     if (users[userId] === undefined) {
-      console.log(`Attempted to register non-existent user ID: ${userId}`);
+      console.log(`[REGISTER] Attempted to register non-existent user ID: ${userId}`);
       return;
     }
     
@@ -178,7 +190,7 @@ io.on('connection', (socket) => {
     const hadSocketsBefore = userSockets.get(userId).size > 0;
     userSockets.get(userId).add(socket.id);
     
-    if (!hadSocketsBefore) { // Only notify if they were previously offline
+    if (!hadSocketsBefore) {
         users[userId].contacts.forEach(contact => {
             const contactUser = users[contact.id];
             if(!contactUser) return;
@@ -199,7 +211,7 @@ io.on('connection', (socket) => {
     }).filter(Boolean);
     socket.emit('initial-statuses', initialStatuses);
 
-    console.log(`User ${userId} (${users[userId].name}) registered. Sockets: ${[...userSockets.get(userId)]}`);
+    console.log(`[REGISTER] User ${userId} (${users[userId].name}) registered. Sockets: ${[...userSockets.get(userId)]}`);
   });
 
   socket.on('outgoing-call', (data) => {
@@ -208,7 +220,7 @@ io.on('connection', (socket) => {
     const fromUser = users[fromId];
 
     if (toSocketIds && fromUser) {
-      console.log(`Call attempt from ${fromUser.name} to ${users[toId].name}. Sending to sockets: ${[...toSocketIds]}`);
+      console.log(`[CALL] Attempt from ${fromUser.name} to ${users[toId].name}. Sending to sockets: ${[...toSocketIds]}`);
       const fromUserProfile = { id: fromUser.id, name: fromUser.name, avatarUrl: fromUser.avatarUrl, status: 'ONLINE' };
       toSocketIds.forEach(socketId => {
         io.to(socketId).emit('incoming-call', { 
@@ -219,7 +231,7 @@ io.on('connection', (socket) => {
         });
       });
     } else {
-      console.log(`Call failed: Could not find user or sockets. toId: ${toId}, fromId: ${fromId}`);
+      console.log(`[CALL] Failed: Could not find user or sockets. toId: ${toId}, fromId: ${fromId}`);
     }
   });
 
@@ -227,7 +239,7 @@ io.on('connection', (socket) => {
     const { fromId, toSocketId, answer } = data;
      if (toSocketId) {
         const fromUser = users[fromId];
-        console.log(`Call accepted by ${fromUser?.name}. Sending answer to original caller at socket ${toSocketId}`);
+        console.log(`[CALL] Accepted by ${fromUser?.name}. Sending answer to original caller at socket ${toSocketId}`);
         
         activeCalls.set(socket.id, toSocketId);
         activeCalls.set(toSocketId, socket.id);
@@ -242,18 +254,20 @@ io.on('connection', (socket) => {
   socket.on('ice-candidate', (data) => {
     const { toSocketId, candidate } = data;
     if (toSocketId) {
+      // console.log(`[ICE] Relaying ICE candidate from ${socket.id} to ${toSocketId}`);
       io.to(toSocketId).emit('ice-candidate', { candidate, fromSocketId: socket.id });
     }
   });
 
   socket.on('end-call', (data) => {
     const { toSocketId } = data;
+    console.log(`[END CALL] Received from ${socket.id} for ${toSocketId}`);
     cleanupCallState(toSocketId);
     cleanupCallState(socket.id);
   });
 
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
+    console.log('[DISCONNECT] User disconnected:', socket.id);
     cleanupCallState(socket.id);
 
     const userId = socket.userId;
@@ -275,7 +289,7 @@ io.on('connection', (socket) => {
                     }
                 });
             }
-            console.log(`User ${userId} (${users[userId]?.name}) is now fully offline.`);
+            console.log(`[STATUS] User ${userId} (${users[userId]?.name}) is now fully offline.`);
         }
     }
   });
