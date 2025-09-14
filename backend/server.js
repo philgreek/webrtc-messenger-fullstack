@@ -6,6 +6,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 const app = express();
+const server = http.createServer(app);
 
 const allowedOrigins = [
     'https://connectsphere-messenger.vercel.app', 
@@ -21,20 +22,22 @@ const corsOptions = {
     } else {
       callback(new Error('Not allowed by CORS'));
     }
-  }
+  },
+  credentials: true
 };
 
 app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // Enable pre-flight for all routes
+
 app.use(express.json({ limit: '5mb' }));
 
-const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
-    methods: ["GET", "POST"]
+    methods: ["GET", "POST"],
+    credentials: true
   },
-  transports: ['websocket'], // Force WebSocket transport for reliability
   pingInterval: 25000,
   pingTimeout: 20000,
 });
@@ -64,6 +67,16 @@ const you = createInitialUser('You', 'password123');
 const tester = createInitialUser('TESTER', 'password123');
 const tester2 = createInitialUser('TESTER2', 'password123');
 
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (token == null) return res.sendStatus(401);
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) return res.sendStatus(403);
+        req.user = user;
+        next();
+    });
+};
 
 // --- API Routes ---
 
@@ -92,16 +105,6 @@ app.post('/api/login', (req, res) => {
     res.json({ token, user: userProfile, contacts, groups: user.groups });
 });
 
-const authenticateToken = (req, res, next) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-    if (token == null) return res.sendStatus(401);
-    jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) return res.sendStatus(403);
-        req.user = user;
-        next();
-    });
-};
 
 app.get('/api/data', authenticateToken, (req, res) => {
     const user = users[req.user.id];
