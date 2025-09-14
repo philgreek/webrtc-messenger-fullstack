@@ -49,7 +49,6 @@ const App: React.FC = () => {
     const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
     const cameraVideoTrackRef = useRef<MediaStreamTrack | null>(null);
     
-    // This ref helps manage remote tracks reliably
     const remoteStreamRef = useRef<MediaStream | null>(null);
 
 
@@ -150,7 +149,9 @@ const App: React.FC = () => {
                 remoteStreamRef.current = new MediaStream();
                 setRemoteStreams([remoteStreamRef.current]);
             }
-            remoteStreamRef.current.addTrack(event.track);
+            event.streams[0].getTracks().forEach(track => {
+                remoteStreamRef.current?.addTrack(track);
+            });
         };
         
         localStream?.getTracks().forEach(track => {
@@ -164,7 +165,9 @@ const App: React.FC = () => {
     }, [localStream, peerSocketId]);
     
     const setupMedia = useCallback(async (type: CallType, facingMode: 'user' | 'environment' = 'user') => {
-        localStream?.getTracks().forEach(track => track.stop());
+        if (localStream) {
+            localStream.getTracks().forEach(track => track.stop());
+        }
         const constraints = { 
             audio: true, 
             video: type === CallType.VIDEO ? { width: 1280, height: 720, facingMode } : false 
@@ -365,8 +368,8 @@ const App: React.FC = () => {
             const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
             const screenTrack = screenStream.getVideoTracks()[0];
             
-            if (!cameraVideoTrackRef.current) {
-                cameraVideoTrackRef.current = localStream?.getVideoTracks()[0] || null;
+            if (!cameraVideoTrackRef.current && localStream) {
+                cameraVideoTrackRef.current = localStream.getVideoTracks()[0] || null;
             }
             
             const sender = peerConnectionRef.current.getSenders().find(s => s.track?.kind === 'video');
